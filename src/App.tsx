@@ -1,35 +1,35 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import { Routes, Route } from 'react-router-dom';
+
+// Importa tus componentes de login y registro
+// Asegúrate de que las rutas de importación sean correctas,
+// por ejemplo, si están en una carpeta 'pages':
+import Login from './pages/Login.tsx';
+import Register from './pages/Register.tsx';
+// Si tu componente principal actual es solo el que tienes, llámalo Home o Dashboard
+import Home from './pages/Home.tsx'; // O el componente principal de tu app
 
 function App() {
-  const [count, setCount] = useState(0)
-
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
+    <div className="App">
+      {/* Opcional: Si tienes una barra de navegación (Navbar), ponla aquí
+      */}
+      
+      {/* Las <Routes> definen dónde se renderizan tus componentes */}
+      <Routes>
+        {/* Ruta de inicio (o dashboard, si ya estás logeado) */}
+        <Route path="/" element={<Home />} />
+        
+        {/* Ruta para el login */}
+        <Route path="/login" element={<Login />} />
+        
+        {/* Ruta para el registro */}
+        <Route path="/register" element={<Register />} />
+        
+        {/* Ruta para manejar URLs no encontradas (404) */}
+        <Route path="*" element={<h1>404 - Página no encontrada</h1>} />
+      </Routes>
+    </div>
+  );
 }
 
-export default App
+export default App;
