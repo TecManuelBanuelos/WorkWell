@@ -66,3 +66,16 @@ button:focus-visible {
     background-color: #f9f9f9;
   }
 }
+/* Agrega esto al final de src/index.css */
+
+#ibm-chat-container {
+  position: absolute;
+  top: -10000px;      /* Lo mandamos fuera de la pantalla */
+  left: -10000px;
+  visibility: hidden; /* Lo hacemos invisible */
+  opacity: 0;         /* Transparencia total */
+  width: 1px;         /* Le damos un tamaño mínimo técnico */
+  height: 1px;
+  overflow: hidden;
+  z-index: -1;
+}
