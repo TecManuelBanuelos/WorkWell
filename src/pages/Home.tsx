@@ -1,14 +1,6 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
-
-// Extender la interfaz global de Window
-declare global {
-    interface Window {
-      wxOConfiguration?: any;
-      wxoLoader?: any;
-    }
-}
 
 // --- ESTILOS ---
 const THEME = {
@@ -23,6 +15,7 @@ const THEME = {
   chatBarBg: '#0f172a', 
 };
 
+// Hook simple para tamaño de pantalla
 const useWindowSize = () => {
   const [windowSize, setWindowSize] = useState({ width: window.innerWidth });
   useEffect(() => {
@@ -33,8 +26,6 @@ const useWindowSize = () => {
   return windowSize;
 };
 
-// Tipos
-interface Message { id: number; text: string; sender: 'user' | 'bot'; }
 interface Task { 
   requestId: number; 
   TypeOfRequest: string; 
@@ -45,127 +36,68 @@ interface Task {
   status: "Complete" | "On process" | "Denied"; 
 }
 
-const useAuth = () => true;
-
 const Home: React.FC = () => {
   const navigate = useNavigate();
-  const isAuthenticated = useAuth();
-  const [loading, setLoading] = useState(true);
+  const [loadingSession, setLoadingSession] = useState(true);
   
-  // Estados
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [inputText, setInputText] = useState('');
-  const isInitialized = useRef(false);
-  const [ibmAgent, setIbmAgent] = useState<any>(null);
-
-  const [currentView, setCurrentView] = useState<'chat' | 'table'>('chat');
+  // --- ESTADOS DE LA TABLA ---
+  const [currentView, setCurrentView] = useState<'chat' | 'table'>('table'); // Por defecto tabla ahora
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loadingTasks, setLoadingTasks] = useState(false);
 
   const { width } = useWindowSize();
   const isMobile = width <= 767;
 
+  // --- 1. LÓGICA DE PROTECCIÓN (AUTH REAL) ---
   useEffect(() => {
-    if (!isAuthenticated) navigate('/login');
-    setLoading(false);
-  }, [isAuthenticated, navigate]);
+    // Verificar si hay sesión activa al cargar
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) {
+        navigate('/login');
+      } else {
+        setLoadingSession(false);
+      }
+    });
 
-  // --- 1. LÓGICA WATSON (SIN ASYNC EN HANDLERS) ---
+    // Escuchar cambios (ej: si cierra sesión en otra pestaña)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session) {
+        navigate('/login');
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [navigate]);
+
+
+  // --- 2. LÓGICA DE CERRAR SESIÓN ---
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    navigate('/login');
+  };
+
+
+  // --- 3. LÓGICA DE DATOS: SUPABASE ---
   useEffect(() => {
-    if (isInitialized.current) return;
-    isInitialized.current = true;
-
-    // Forzar estilos
-    const container = document.getElementById('ibm-chat-container');
-    if (container) {
-        container.style.position = 'absolute';
-        container.style.top = '-10000px';
-        container.style.visibility = 'hidden';
-        container.style.width = '1px';
-        container.style.height = '1px';
-        container.style.overflow = 'hidden';
+    if (!loadingSession && currentView === 'table') {
+      fetchTasks();
     }
-
-    const setupInstance = (instance: any) => {
-        console.log("🚀 ¡Agente IBM Conectado y Configurado!", instance);
-        setIbmAgent(instance);
-
-        if (instance && instance.on) {
-            
-            // A. ESCUCHAR MENSAJES (Sin async aquí)
-            instance.on({ type: 'receive', handler: (event: any) => {
-                const botText = event.data.text || event.data.content || ""; 
-                setMessages(prev => [...prev, { id: Date.now(), text: botText, sender: 'bot' }]);
-
-                // Procesar JSON
-                const jsonMatch = botText.match(/\{[\s\S]*\}/);
-                if (jsonMatch) {
-                    try {
-                        const taskData = JSON.parse(jsonMatch[0]);
-                        if(taskData.request_type) {
-                           console.log("💾 Detectado JSON. Guardando en Supabase...");
-                           // Hacemos la llamada async separada para no bloquear al bot
-                           supabase.from('tasks').insert([taskData])
-                             .then(() => {
-                                 console.log("✅ Guardado exitoso");
-                                 // Forzamos recarga visual si es necesario (opcional)
-                             });
-                        }
-                    } catch(e) { console.error("Error parseando JSON del bot", e); }
-                }
-            }});
-
-            // B. MANEJAR TOKEN (Sin async aquí)
-            instance.on({ type: 'authTokenNeeded', handler: (event: any) => {
-                console.log("🔐 IBM pidió token. Enviando identidad anónima.");
-                event.authToken = "dummy"; 
-                event.identityToken = "dummy"; 
-            }});
-        }
-    };
-
-    window.wxOConfiguration = {
-      orchestrationID: "28436f4764ec491e9b6b3797f94e6acc_b4b532d1-d810-4636-9d5e-faf7f5115865",
-      agentEnvironmentId: "4390a963-08d5-40b1-80c6-64666e11cc42",
-      hostURL: "https://us-south.watson-orchestrate.cloud.ibm.com",
-      rootElementID: "ibm-chat-container",
-      deploymentPlatform: "ibmcloud",
-      crn: "crn:v1:bluemix:public:watsonx-orchestrate:us-south:a/28436f4764ec491e9b6b3797f94e6acc:b4b532d1-d810-4636-9d5e-faf7f5115865::",
-      chatOptions: {
-          agentId: "80404d22-9c09-4adc-bf53-8a528779b27d",
-          onLoad: (instance: any) => setupInstance(instance)
-      }
-    };
-
-    const script = document.createElement('script');
-    script.src = `${window.wxOConfiguration.hostURL}/wxochat/wxoLoader.js?embed=true`;
-    script.async = true;
-    script.onload = () => {
-      if (window.wxoLoader) {
-          try {
-            const instance = window.wxoLoader.init();
-            if (instance) setupInstance(instance);
-          } catch (err) { console.warn("Esperando onLoad...", err); }
-      }
-    };
-    document.head.appendChild(script);
-
-  }, []); 
-
-  // --- 2. LOGICA DE DATOS ---
-  useEffect(() => {
-    if (currentView === 'table') fetchTasks();
-  }, [currentView]);
+  }, [currentView, loadingSession]);
 
   const fetchTasks = async () => {
     setLoadingTasks(true);
     try {
       const { data, error } = await supabase
-        .from('tasks').select('*').order('id', { ascending: true });
+        .from('tasks')
+        .select('*')
+        .order('id', { ascending: true });
+  
+      if (error) throw error;
+  
       if (data) {
         const mappedData: Task[] = data.map((item: any) => ({
-          requestId: item.id,
-          TypeOfRequest: item.request_type, 
+          requestId: item.id,                
+          TypeOfRequest: item.request_type,  
           dateOfEntrance: item.entrance_date,
           dateOfOut: item.out_date,
           daysOf: item.days_count,
@@ -174,25 +106,10 @@ const Home: React.FC = () => {
         }));
         setTasks(mappedData);
       }
-    } catch (error) { console.error(error); } 
-    finally { setLoadingTasks(false); }
-  };
-
-  const handleSendMessage = async () => {
-    if (inputText.trim() === '') return;
-    setMessages(prev => [...prev, { id: Date.now(), text: inputText, sender: 'user' }]);
-    const textToSend = inputText;
-    setInputText('');
-
-    if (ibmAgent) {
-        try {
-            // Probamos enviar el texto plano primero para evitar problemas de estructura
-            await ibmAgent.send(textToSend);
-        } catch (err) {
-            console.error("Error enviando", err);
-        }
-    } else {
-        console.warn("Agente no listo");
+    } catch (error) {
+      console.error("Error cargando tareas:", error);
+    } finally {
+      setLoadingTasks(false);
     }
   };
 
@@ -205,11 +122,16 @@ const Home: React.FC = () => {
     }
   };
 
-  if (loading) return <div>Cargando...</div>;
+  if (loadingSession) return <div style={{height: '100vh', display:'flex', alignItems:'center', justifyContent:'center'}}>Verificando sesión...</div>;
 
   return (
-    <div style={{ height: '100vh', width: '100vw', display: 'flex', flexDirection: 'column', backgroundColor: THEME.bgMain, fontFamily: '"Inter", "Segoe UI", sans-serif', overflow: 'hidden', margin: 0, padding: 0, boxSizing: 'border-box', color: THEME.textMain }}>
+    <div style={{ 
+      height: '100vh', width: '100vw', display: 'flex', flexDirection: 'column',
+      backgroundColor: THEME.bgMain, fontFamily: '"Inter", "Segoe UI", sans-serif',
+      overflow: 'hidden', margin: 0, padding: 0, boxSizing: 'border-box', color: THEME.textMain
+    }}>
       
+      {/* HEADER */}
       <div style={{ height: '64px', padding: '0 24px', backgroundColor: THEME.headerBg, borderBottom: `1px solid ${THEME.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)', zIndex: 10, flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
           {isMobile && <span style={{fontSize: '20px', cursor:'pointer', color: THEME.textMuted}}>☰</span>}
@@ -218,45 +140,84 @@ const Home: React.FC = () => {
             <span style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b' }}>Work Well</span>
           </div>
         </div>
-        <div style={{ width: '36px', height: '36px', backgroundColor: '#e2e8f0', color: '#475569', borderRadius: '50%', display: 'flex', justifyContent: 'center', alignItems: 'center', fontSize: '14px', fontWeight: '600', border: '2px solid #fff', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', cursor: 'pointer' }}>AU</div>
+        
+        {/* AVATAR + LOGOUT */}
+        <div style={{ display:'flex', gap: '10px', alignItems: 'center'}}>
+            <button 
+                onClick={handleLogout}
+                style={{ padding: '8px 12px', fontSize: '12px', border: '1px solid #e2e8f0', backgroundColor: 'white', borderRadius: '6px', cursor: 'pointer', color: '#64748b' }}
+            >
+                Salir
+            </button>
+            <div style={{ width: '36px', height: '36px', backgroundColor: '#e2e8f0', color: '#475569', borderRadius: '50%', display: 'flex', justifyContent: 'center', alignItems: 'center', fontSize: '14px', fontWeight: '600', border: '2px solid #fff', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', cursor: 'pointer' }}>AU</div>
+        </div>
       </div>
 
+      {/* BODY */}
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+        
+        {/* SIDEBAR */}
         <div style={{ width: '72px', backgroundColor: THEME.sidebarBg, display: isMobile ? 'none' : 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: '24px', gap: '24px', flexShrink: 0 }}>
-          <div onClick={() => setCurrentView('chat')} title="Chat" style={{ width: '40px', height: '40px', borderRadius: '50%', cursor: 'pointer', backgroundColor: currentView === 'chat' ? THEME.activeItem : 'rgba(255,255,255,0.1)', display: 'flex', justifyContent: 'center', alignItems: 'center', transition: 'all 0.2s' }}><div style={{ width: '18px', height: '18px', border: '2px solid white', borderRadius: '50% 50% 0 50%' }}></div></div>
-          <div onClick={() => setCurrentView('table')} title="Tabla" style={{ width: '40px', height: '40px', borderRadius: '8px', cursor: 'pointer', backgroundColor: currentView === 'table' ? THEME.activeItem : 'transparent', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: '4px', transition: 'all 0.2s' }}><div style={{ width: '20px', height: '2px', backgroundColor: '#fff', opacity: 0.9 }} /><div style={{ width: '20px', height: '2px', backgroundColor: '#fff', opacity: 0.9 }} /><div style={{ width: '20px', height: '2px', backgroundColor: '#fff', opacity: 0.9 }} /></div>
+          <div onClick={() => setCurrentView('chat')} title="Chat" style={{ width: '40px', height: '40px', borderRadius: '50%', cursor: 'pointer', backgroundColor: currentView === 'chat' ? THEME.activeItem : 'rgba(255,255,255,0.1)', display: 'flex', justifyContent: 'center', alignItems: 'center', transition: 'all 0.2s' }}>
+            <div style={{ width: '18px', height: '18px', border: '2px solid white', borderRadius: '50% 50% 0 50%' }}></div>
+          </div>
+          <div onClick={() => setCurrentView('table')} title="Tabla" style={{ width: '40px', height: '40px', borderRadius: '8px', cursor: 'pointer', backgroundColor: currentView === 'table' ? THEME.activeItem : 'transparent', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: '4px', transition: 'all 0.2s' }}>
+            <div style={{ width: '20px', height: '2px', backgroundColor: '#fff', opacity: 0.9 }} />
+            <div style={{ width: '20px', height: '2px', backgroundColor: '#fff', opacity: 0.9 }} />
+            <div style={{ width: '20px', height: '2px', backgroundColor: '#fff', opacity: 0.9 }} />
+          </div>
         </div>
 
+        {/* MAIN CONTENT */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative', backgroundColor: '#f8fafc' }}>
+          
+          {/* --- VISTA CHAT (Vacía por ahora) --- */}
           {currentView === 'chat' && (
-            <>
-              <div style={{ flex: 1, padding: '24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                {messages.length === 0 && (<div style={{ textAlign: 'center', marginTop: '10%', color: THEME.textMuted }}><p>Bienvenido al asistente. Escribe para comenzar.</p></div>)}
-                {messages.map((msg) => (
-                  <div key={msg.id} style={{ alignSelf: msg.sender === 'user' ? 'flex-end' : 'flex-start', maxWidth: isMobile ? '90%' : '60%' }}>
-                    <div style={{ backgroundColor: msg.sender === 'user' ? THEME.primary : '#ffffff', color: msg.sender === 'user' ? 'white' : '#1e293b', padding: '12px 16px', borderRadius: msg.sender === 'user' ? '12px 12px 0 12px' : '12px 12px 12px 0', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>{msg.text}</div>
-                  </div>
-                ))}
-              </div>
-              <div style={{ padding: '20px 24px', backgroundColor: THEME.chatBarBg, display: 'flex', gap: '12px', alignItems: 'center', borderTop: '1px solid #334155' }}>
-                <input type="text" placeholder="Escribe tu solicitud..." value={inputText} onChange={(e) => setInputText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()} style={{ flex: 1, maxWidth: '1000px', height: '44px', borderRadius: '6px', border: '1px solid #475569', padding: '0 16px', fontSize: '14px', outline: 'none', backgroundColor: '#1e293b', color: '#fff' }} />
-                <button onClick={handleSendMessage} style={{ height: '44px', padding: '0 20px', borderRadius: '6px', border: 'none', backgroundColor: THEME.primary, color: 'white', fontWeight: '600', cursor: 'pointer' }}>Enviar</button>
-              </div>
-            </>
+            <div style={{ flex: 1, padding: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: THEME.textMuted }}>
+                 <p>Chat desactivado temporalmente.</p>
+            </div>
           )}
 
+          {/* --- VISTA TABLA --- */}
           {currentView === 'table' && (
             <div style={{ flex: 1, padding: isMobile ? '16px' : '32px', overflowY: 'auto' }}>
               <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '20px' }}>Historial</h2>
+              
               <div style={{ backgroundColor: '#fff', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', border: `1px solid ${THEME.border}`, overflow: 'hidden' }}>
-                {loadingTasks ? (<div style={{ padding: '40px', textAlign: 'center', color: THEME.textMuted }}>Cargando datos...</div>) : (
+                
+                {loadingTasks ? (
+                  <div style={{ padding: '40px', textAlign: 'center', color: THEME.textMuted }}>Cargando datos...</div>
+                ) : (
                   <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '900px' }}>
-                      <thead><tr style={{ backgroundColor: '#f8fafc', borderBottom: `1px solid ${THEME.border}` }}><th style={{ padding: '16px', textAlign: 'left', fontSize: '12px', color: '#64748b' }}>ID</th><th style={{ padding: '16px', textAlign: 'left', fontSize: '12px', color: '#64748b' }}>TYPE</th><th style={{ padding: '16px', textAlign: 'left', fontSize: '12px', color: '#64748b' }}>ENTRANCE</th><th style={{ padding: '16px', textAlign: 'left', fontSize: '12px', color: '#64748b' }}>OUT</th><th style={{ padding: '16px', textAlign: 'center', fontSize: '12px', color: '#64748b' }}>DAYS</th><th style={{ padding: '16px', textAlign: 'left', fontSize: '12px', color: '#64748b' }}>TIME</th><th style={{ padding: '16px', textAlign: 'right', fontSize: '12px', color: '#64748b' }}>STATUS</th></tr></thead>
+                      <thead>
+                        <tr style={{ backgroundColor: '#f8fafc', borderBottom: `1px solid ${THEME.border}` }}>
+                          <th style={{ padding: '16px', textAlign: 'left', fontSize: '12px', color: '#64748b' }}>ID</th>
+                          <th style={{ padding: '16px', textAlign: 'left', fontSize: '12px', color: '#64748b' }}>TYPE</th>
+                          <th style={{ padding: '16px', textAlign: 'left', fontSize: '12px', color: '#64748b' }}>ENTRANCE</th>
+                          <th style={{ padding: '16px', textAlign: 'left', fontSize: '12px', color: '#64748b' }}>OUT</th>
+                          <th style={{ padding: '16px', textAlign: 'center', fontSize: '12px', color: '#64748b' }}>DAYS</th>
+                          <th style={{ padding: '16px', textAlign: 'left', fontSize: '12px', color: '#64748b' }}>TIME</th>
+                          <th style={{ padding: '16px', textAlign: 'right', fontSize: '12px', color: '#64748b' }}>STATUS</th>
+                        </tr>
+                      </thead>
                       <tbody>
-                        {tasks.map((task) => { const badge = getStatusBadgeStyle(task.status); return (
-                            <tr key={task.requestId} style={{ borderBottom: '1px solid #f1f5f9' }}><td style={{ padding: '16px', fontSize: '14px', fontWeight: '500' }}>#{task.requestId}</td><td style={{ padding: '16px', fontSize: '14px' }}>{task.TypeOfRequest}</td><td style={{ padding: '16px', fontSize: '14px', color: THEME.textMuted }}>{task.dateOfEntrance}</td><td style={{ padding: '16px', fontSize: '14px', color: THEME.textMuted }}>{task.dateOfOut}</td><td style={{ padding: '16px', textAlign: 'center' }}>{task.daysOf}</td><td style={{ padding: '16px', color: THEME.textMuted }}>{task.processTime}</td><td style={{ padding: '16px', textAlign: 'right' }}><span style={{ fontSize: '12px', fontWeight: '600', padding: '4px 10px', borderRadius: '9999px', backgroundColor: badge.bg, color: badge.text }}>{task.status}</span></td></tr>
-                        );})}
+                        {tasks.map((task) => {
+                           const badge = getStatusBadgeStyle(task.status);
+                           return (
+                            <tr key={task.requestId} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                              <td style={{ padding: '16px', fontSize: '14px', fontWeight: '500' }}>#{task.requestId}</td>
+                              <td style={{ padding: '16px', fontSize: '14px' }}>{task.TypeOfRequest}</td>
+                              <td style={{ padding: '16px', fontSize: '14px', color: THEME.textMuted }}>{task.dateOfEntrance}</td>
+                              <td style={{ padding: '16px', fontSize: '14px', color: THEME.textMuted }}>{task.dateOfOut}</td>
+                              <td style={{ padding: '16px', textAlign: 'center' }}>{task.daysOf}</td>
+                              <td style={{ padding: '16px', color: THEME.textMuted }}>{task.processTime}</td>
+                              <td style={{ padding: '16px', textAlign: 'right' }}>
+                                <span style={{ fontSize: '12px', fontWeight: '600', padding: '4px 10px', borderRadius: '9999px', backgroundColor: badge.bg, color: badge.text }}>{task.status}</span>
+                              </td>
+                            </tr>
+                           );
+                        })}
                       </tbody>
                     </table>
                   </div>
