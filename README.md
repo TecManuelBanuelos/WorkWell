@@ -62,6 +62,3 @@ However, the application is now hosted on: 'https://work-well-v2.vercel.app'
 - Supabase (Database + Storage)
 - IBM Watson Orchestrate
 
-## License
-
-[Add your license here]
