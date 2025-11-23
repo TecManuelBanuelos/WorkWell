@@ -8,12 +8,17 @@ const THEME = {
   sidebarBg: '#1e293b',
   activeItem: '#3b82f6',
   headerBg: '#ffffff',
-  bgMain: '#f1f5f9',
+  bgMain: '#fafbfc',
   textMain: '#0f172a',
   textMuted: '#64748b',
   border: '#e2e8f0',
   primary: '#2563eb',
+  primaryHover: '#1d4ed8',
   chatBarBg: '#0f172a',
+  cardBg: '#ffffff',
+  shadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)',
+  shadowMd: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+  shadowLg: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
 };
 
 // --- TIPOS ---
@@ -61,18 +66,29 @@ declare global {
   }
 }
 
+// EMPLEADO HARDCODEADO
+const HARDCODED_EMPLOYEE: Employee = {
+  id: 1,
+  name: 'Juan Pérez',
+  email: 'juan.perez@empresa.com',
+  department: 'Recursos Humanos',
+  position: 'Gerente de RRHH',
+};
+
 const Home: React.FC = () => {
   const navigate = useNavigate();
-  const [loadingSession, setLoadingSession] = useState(true);
-
-  // DATOS USUARIO
-  const [employee, setEmployee] = useState<Employee | null>(null);
+  
+  // DATOS USUARIO HARDCODEADO
+  const [employee] = useState<Employee>(HARDCODED_EMPLOYEE);
 
   // ESTADOS TABLA
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loadingTasks, setLoadingTasks] = useState(false);
 
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 767);
+  
+  // ESTADO MENÚ USUARIO
+  const [showUserMenu, setShowUserMenu] = useState(false);
 
   // optional: actualizar isMobile al redimensionar
   useEffect(() => {
@@ -81,46 +97,8 @@ const Home: React.FC = () => {
     return () => window.removeEventListener('resize', handler);
   }, []);
 
-  // --- 1. AUTH & PERFIL ---
+  // --- 1. IBM WATSON ORCHESTRATE AGENT WIDGET ---
   useEffect(() => {
-    const checkUser = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (!session) {
-        navigate('/login');
-        return;
-      }
-
-      if (session.user.email) {
-        const { data } = await supabase
-          .from('employees')
-          .select('*')
-          .eq('email', session.user.email)
-          .single();
-        if (data) setEmployee(data as Employee);
-      }
-      setLoadingSession(false);
-    };
-
-    checkUser();
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session) navigate('/login');
-    });
-
-    return () => subscription.unsubscribe();
-  }, [navigate]);
-
-  // --- 2. IBM WATSON ORCHESTRATE AGENT WIDGET ---
-  useEffect(() => {
-    // Wait for session to be loaded before initializing widget
-    if (loadingSession) {
-      return;
-    }
-
     const hostURL = "https://us-south.watson-orchestrate.cloud.ibm.com";
     
     // Configure IBM Watson Orchestrate agent
@@ -199,12 +177,12 @@ const Home: React.FC = () => {
       // Don't remove the script or configuration on cleanup
       // The widget should persist across navigation
     };
-  }, [loadingSession]);
+  }, []);
 
-  // --- 3. LÓGICA DE DATOS (TABLA) ---
+  // --- 2. LÓGICA DE DATOS (TABLA) ---
   useEffect(() => {
-    if (!loadingSession) fetchTasks();
-  }, [loadingSession]);
+    fetchTasks();
+  }, []);
 
   const fetchTasks = async () => {
     setLoadingTasks(true);
@@ -261,21 +239,6 @@ const Home: React.FC = () => {
     }
   };
 
-  if (loadingSession) {
-    return (
-      <div
-        style={{
-          height: '100vh',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        Cargando...
-      </div>
-    );
-  }
-
   return (
     <div
         style={{
@@ -284,40 +247,71 @@ const Home: React.FC = () => {
           display: 'flex',
           flexDirection: 'column',
           backgroundColor: THEME.bgMain,
-          fontFamily: '"Inter", "Segoe UI", sans-serif',
+          fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
           overflow: 'hidden',
         }}
       >
       {/* HEADER */}
       <div
         style={{
-          height: '64px',
-          padding: '0 24px',
+          height: '72px',
+          padding: '0 32px',
           backgroundColor: THEME.headerBg,
           borderBottom: `1px solid ${THEME.border}`,
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+          boxShadow: THEME.shadow,
           zIndex: 10,
+          backdropFilter: 'blur(10px)',
+          transition: 'all 0.3s ease',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-          {isMobile && <span style={{ fontSize: '20px' }}>☰</span>}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          {isMobile && (
+            <span 
+              style={{ 
+                fontSize: '24px', 
+                cursor: 'pointer',
+                transition: 'transform 0.2s ease',
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.1)'}
+              onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+            >
+              ☰
+            </span>
+          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div
               style={{
-                width: '24px',
-                height: '24px',
+                width: '32px',
+                height: '32px',
                 background: 'linear-gradient(135deg, #2563eb, #1e40af)',
-                borderRadius: '6px',
+                borderRadius: '8px',
+                boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.3)',
+                transition: 'transform 0.3s ease, box-shadow 0.3s ease',
+                animation: 'fadeIn 0.5s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'scale(1.05) rotate(5deg)';
+                e.currentTarget.style.boxShadow = '0 6px 12px -1px rgba(37, 99, 235, 0.4)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'scale(1) rotate(0deg)';
+                e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(37, 99, 235, 0.3)';
               }}
             />
             <span
               style={{
-                fontSize: '20px',
+                fontSize: '22px',
                 fontWeight: '700',
                 color: '#1e293b',
+                letterSpacing: '-0.5px',
+                background: 'linear-gradient(135deg, #2563eb, #1e40af)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                backgroundClip: 'text',
+                animation: 'fadeIn 0.5s ease',
               }}
             >
               Work Well
@@ -325,12 +319,13 @@ const Home: React.FC = () => {
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '15px', alignItems: 'center', position: 'relative', zIndex: 10001 }}>
           {employee && (
             <div
               style={{
                 textAlign: 'right',
                 display: isMobile ? 'none' : 'block',
+                animation: 'fadeInRight 0.5s ease',
               }}
             >
               <div
@@ -338,35 +333,151 @@ const Home: React.FC = () => {
                   fontSize: '14px',
                   fontWeight: '600',
                   color: '#1e293b',
+                  marginBottom: '2px',
                 }}
               >
                 {employee.name}
               </div>
-              <div style={{ fontSize: '12px', color: '#64748b' }}>
+              <div style={{ fontSize: '12px', color: '#64748b', fontWeight: '500' }}>
                 {employee.position}
               </div>
             </div>
           )}
           <div
-            title="Salir"
-            onClick={handleLogout}
+            id="user-menu-container"
             style={{
-              width: '36px',
-              height: '36px',
-              backgroundColor: '#e2e8f0',
-              color: '#475569',
-              borderRadius: '50%',
-              display: 'flex',
-              justifyContent: 'center',
-              alignItems: 'center',
-              fontSize: '14px',
-              fontWeight: '600',
-              border: '2px solid #fff',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-              cursor: 'pointer',
+              position: 'relative',
+            }}
+            onMouseEnter={() => {
+              if (employee) {
+                setShowUserMenu(true);
+              }
+            }}
+            onMouseLeave={() => {
+              setShowUserMenu(false);
             }}
           >
-            {employee ? getInitials(employee.name) : 'AU'}
+            <div
+              title={employee ? employee.name : 'Usuario'}
+              style={{
+                width: '40px',
+                height: '40px',
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                color: '#ffffff',
+                borderRadius: '50%',
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                fontSize: '14px',
+                fontWeight: '700',
+                border: '3px solid #ffffff',
+                boxShadow: THEME.shadowMd,
+                cursor: 'pointer',
+                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                animation: 'fadeIn 0.5s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'scale(1.1)';
+                e.currentTarget.style.boxShadow = THEME.shadowLg;
+                e.currentTarget.style.borderColor = '#f0f0f0';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'scale(1)';
+                e.currentTarget.style.boxShadow = THEME.shadowMd;
+                e.currentTarget.style.borderColor = '#ffffff';
+              }}
+            >
+              {employee ? getInitials(employee.name) : 'AU'}
+            </div>
+
+            {/* Menú desplegable */}
+            {showUserMenu && employee && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 12px)',
+                  right: 0,
+                  backgroundColor: '#ffffff',
+                  borderRadius: '12px',
+                  boxShadow: THEME.shadowLg,
+                  border: `1px solid ${THEME.border}`,
+                  minWidth: '240px',
+                  zIndex: 99999,
+                  overflow: 'hidden',
+                  animation: 'slideDown 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                  backdropFilter: 'blur(10px)',
+                }}
+                onMouseEnter={() => {
+                  setShowUserMenu(true);
+                }}
+                onMouseLeave={() => {
+                  setShowUserMenu(false);
+                }}
+              >
+                {/* Información del usuario */}
+                <div
+                  style={{
+                    padding: '16px',
+                    borderBottom: `1px solid ${THEME.border}`,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      color: '#1e293b',
+                      marginBottom: '4px',
+                    }}
+                  >
+                    {employee.name}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: '12px',
+                      color: '#64748b',
+                      marginBottom: '4px',
+                    }}
+                  >
+                    {employee.email}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: '12px',
+                      color: '#64748b',
+                    }}
+                  >
+                    {employee.position} • {employee.department}
+                  </div>
+                </div>
+
+                {/* Botón de logout */}
+                <div
+                  onClick={handleLogout}
+                  style={{
+                    padding: '12px 16px',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    color: '#dc2626',
+                    fontWeight: '600',
+                    transition: 'all 0.2s ease',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#fef2f2';
+                    e.currentTarget.style.paddingLeft = '20px';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                    e.currentTarget.style.paddingLeft = '16px';
+                  }}
+                >
+                  <span>🚪</span>
+                  Cerrar sesión
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -386,7 +497,7 @@ const Home: React.FC = () => {
           <div
             style={{
               flex: 1,
-              padding: isMobile ? '16px' : '32px',
+              padding: isMobile ? '20px' : '40px',
               overflowY: 'auto',
             }}
           >
@@ -395,29 +506,40 @@ const Home: React.FC = () => {
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
-                  marginBottom: '20px',
+                  marginBottom: '32px',
+                  animation: 'fadeInUp 0.6s ease',
                 }}
               >
                 <h2
                   style={{
-                    fontSize: '24px',
-                    fontWeight: '700',
+                    fontSize: '28px',
+                    fontWeight: '800',
                     color: '#1e293b',
+                    letterSpacing: '-0.5px',
+                    margin: 0,
                   }}
                 >
                   {employee
-                    ? `Tareas de ${employee.name.split(' ')[0]}`
+                    ? `${employee.name.split(' ')[0]}'s requests`
                     : 'Historial General'}
                 </h2>
                 {employee && (
                   <span
                     style={{
                       fontSize: '12px',
-                      padding: '4px 8px',
-                      backgroundColor: '#e0f2fe',
+                      padding: '6px 12px',
+                      background: 'linear-gradient(135deg, #e0f2fe, #bae6fd)',
                       color: '#0369a1',
-                      borderRadius: '4px',
+                      borderRadius: '20px',
                       fontWeight: '600',
+                      boxShadow: THEME.shadow,
+                      transition: 'transform 0.2s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.transform = 'scale(1.05)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = 'scale(1)';
                     }}
                   >
                     {employee.department}
@@ -427,16 +549,31 @@ const Home: React.FC = () => {
 
               <div
                 style={{
-                  backgroundColor: '#fff',
-                  borderRadius: '8px',
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+                  backgroundColor: THEME.cardBg,
+                  borderRadius: '16px',
+                  boxShadow: THEME.shadowMd,
                   border: `1px solid ${THEME.border}`,
                   overflow: 'hidden',
+                  animation: 'fadeInUp 0.6s ease 0.1s both',
                 }}
               >
                 {loadingTasks ? (
-                  <div style={{ padding: '40px', textAlign: 'center' }}>
-                    Cargando...
+                  <div style={{ 
+                    padding: '60px', 
+                    textAlign: 'center',
+                    color: THEME.textMuted,
+                    fontSize: '14px',
+                  }}>
+                    <div style={{
+                      display: 'inline-block',
+                      width: '40px',
+                      height: '40px',
+                      border: '3px solid #e2e8f0',
+                      borderTopColor: THEME.primary,
+                      borderRadius: '50%',
+                      animation: 'spin 1s linear infinite',
+                    }}></div>
+                    <div style={{ marginTop: '16px' }}>Cargando...</div>
                   </div>
                 ) : (
                   <div style={{ overflowX: 'auto' }}>
@@ -450,76 +587,97 @@ const Home: React.FC = () => {
                       <thead>
                         <tr
                           style={{
-                            backgroundColor: '#f8fafc',
-                            borderBottom: `1px solid ${THEME.border}`,
+                            background: 'linear-gradient(to bottom, #fafbfc, #f8fafc)',
+                            borderBottom: `2px solid ${THEME.border}`,
                           }}
                         >
                           <th
                             style={{
-                              padding: '16px',
+                              padding: '20px 16px',
                               textAlign: 'left',
-                              fontSize: '12px',
+                              fontSize: '11px',
                               color: '#64748b',
+                              fontWeight: '700',
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.5px',
                             }}
                           >
                             ID
                           </th>
                           <th
                             style={{
-                              padding: '16px',
+                              padding: '20px 16px',
                               textAlign: 'left',
-                              fontSize: '12px',
+                              fontSize: '11px',
                               color: '#64748b',
+                              fontWeight: '700',
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.5px',
                             }}
                           >
                             TYPE
                           </th>
                           <th
                             style={{
-                              padding: '16px',
+                              padding: '20px 16px',
                               textAlign: 'left',
-                              fontSize: '12px',
+                              fontSize: '11px',
                               color: '#64748b',
+                              fontWeight: '700',
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.5px',
                             }}
                           >
                             ENTRANCE
                           </th>
                           <th
                             style={{
-                              padding: '16px',
+                              padding: '20px 16px',
                               textAlign: 'left',
-                              fontSize: '12px',
+                              fontSize: '11px',
                               color: '#64748b',
+                              fontWeight: '700',
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.5px',
                             }}
                           >
                             OUT
                           </th>
                           <th
                             style={{
-                              padding: '16px',
+                              padding: '20px 16px',
                               textAlign: 'center',
-                              fontSize: '12px',
+                              fontSize: '11px',
                               color: '#64748b',
+                              fontWeight: '700',
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.5px',
                             }}
                           >
                             DAYS
                           </th>
                           <th
                             style={{
-                              padding: '16px',
+                              padding: '20px 16px',
                               textAlign: 'left',
-                              fontSize: '12px',
+                              fontSize: '11px',
                               color: '#64748b',
+                              fontWeight: '700',
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.5px',
                             }}
                           >
                             TIME
                           </th>
                           <th
                             style={{
-                              padding: '16px',
+                              padding: '20px 16px',
                               textAlign: 'right',
-                              fontSize: '12px',
+                              fontSize: '11px',
                               color: '#64748b',
+                              fontWeight: '700',
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.5px',
                             }}
                           >
                             STATUS
@@ -527,77 +685,112 @@ const Home: React.FC = () => {
                         </tr>
                       </thead>
                       <tbody>
-                        {tasks.map((task) => {
+                        {tasks.map((task, index) => {
                           const badge = getStatusBadgeStyle(task.status);
                           return (
                             <tr
                               key={task.requestId}
                               style={{
                                 borderBottom: '1px solid #f1f5f9',
+                                transition: 'all 0.2s ease',
+                                animation: `fadeInUp 0.4s ease ${index * 0.05}s both`,
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.backgroundColor = '#fafbfc';
+                                e.currentTarget.style.transform = 'translateX(4px)';
+                                e.currentTarget.style.boxShadow = 'inset 4px 0 0 0 #2563eb';
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.backgroundColor = 'transparent';
+                                e.currentTarget.style.transform = 'translateX(0)';
+                                e.currentTarget.style.boxShadow = 'none';
                               }}
                             >
                               <td
                                 style={{
-                                  padding: '16px',
+                                  padding: '20px 16px',
                                   fontSize: '14px',
-                                  fontWeight: '500',
+                                  fontWeight: '600',
+                                  color: THEME.textMain,
                                 }}
                               >
                                 #{task.requestId}
                               </td>
                               <td
-                                style={{ padding: '16px', fontSize: '14px' }}
+                                style={{ 
+                                  padding: '20px 16px', 
+                                  fontSize: '14px',
+                                  fontWeight: '500',
+                                  color: THEME.textMain,
+                                }}
                               >
                                 {task.TypeOfRequest}
                               </td>
                               <td
                                 style={{
-                                  padding: '16px',
+                                  padding: '20px 16px',
                                   fontSize: '14px',
                                   color: THEME.textMuted,
+                                  fontWeight: '500',
                                 }}
                               >
                                 {task.dateOfEntrance}
                               </td>
                               <td
                                 style={{
-                                  padding: '16px',
+                                  padding: '20px 16px',
                                   fontSize: '14px',
                                   color: THEME.textMuted,
+                                  fontWeight: '500',
                                 }}
                               >
                                 {task.dateOfOut}
                               </td>
                               <td
                                 style={{
-                                  padding: '16px',
+                                  padding: '20px 16px',
                                   textAlign: 'center',
+                                  fontSize: '14px',
+                                  fontWeight: '600',
+                                  color: THEME.textMain,
                                 }}
                               >
                                 {task.daysOf}
                               </td>
                               <td
                                 style={{
-                                  padding: '16px',
+                                  padding: '20px 16px',
                                   color: THEME.textMuted,
+                                  fontSize: '14px',
+                                  fontWeight: '500',
                                 }}
                               >
                                 {task.processTime}
                               </td>
                               <td
                                 style={{
-                                  padding: '16px',
+                                  padding: '20px 16px',
                                   textAlign: 'right',
                                 }}
                               >
                                 <span
                                   style={{
-                                    fontSize: '12px',
-                                    fontWeight: '600',
-                                    padding: '4px 10px',
-                                    borderRadius: '9999px',
+                                    fontSize: '11px',
+                                    fontWeight: '700',
+                                    padding: '6px 12px',
+                                    borderRadius: '20px',
                                     backgroundColor: badge.bg,
                                     color: badge.text,
+                                    display: 'inline-block',
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.5px',
+                                    transition: 'transform 0.2s ease',
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.transform = 'scale(1.05)';
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.transform = 'scale(1)';
                                   }}
                                 >
                                   {task.status}

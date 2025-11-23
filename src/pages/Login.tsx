@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { useNavigate, Link } from 'react-router-dom';
 
@@ -21,18 +21,62 @@ const Login: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
+  // Si el usuario ya está autenticado, redirigir a Home
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        // Verificar que el empleado exista
+        if (session.user?.email) {
+          const { data: employeeData } = await supabase
+            .from('employees')
+            .select('*')
+            .eq('email', session.user.email)
+            .single();
+          
+          if (employeeData) {
+            navigate('/');
+          }
+        }
+      }
+    };
+
+    checkSession();
+  }, [navigate]);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setErrorMsg('');
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
+
+      // Esperar un momento para que la sesión se establezca
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // Verificar que el empleado exista en la base de datos
+      if (data.user?.email) {
+        const { data: employeeData, error: employeeError } = await supabase
+          .from('employees')
+          .select('*')
+          .eq('email', data.user.email)
+          .single();
+
+        if (employeeError || !employeeData) {
+          await supabase.auth.signOut();
+          setErrorMsg('Tu cuenta no está registrada en el sistema. Contacta al administrador.');
+          setLoading(false);
+          return;
+        }
+      }
+
+      // Navegar a la página principal
       navigate('/');
     } catch (error: any) {
-      setErrorMsg('Credenciales incorrectas.');
-    } finally {
+      console.error('Error en login:', error);
+      setErrorMsg(error.message || 'Credenciales incorrectas.');
       setLoading(false);
     }
   };
