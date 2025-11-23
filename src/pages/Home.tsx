@@ -22,14 +22,17 @@ const THEME = {
 };
 
 // --- TIPOS ---
-interface Task {
-  requestId: number;
-  TypeOfRequest: string;
-  dateOfEntrance: string;
-  dateOfOut: string;
-  daysOf: number;
-  processTime: string;
-  status: 'Complete' | 'On process' | 'Denied';
+interface LeaveRequest {
+  request_id: number;
+  employee_id: number; // int4 from database
+  leave_type: string;
+  start_date: string;
+  end_date: string;
+  approved_days: number;
+  created_at?: string; // Optional, might not exist
+  status?: string; // Optional, might not exist
+  decision_source?: string; // ORCHESTRA, HR_MANUAL, etc.
+  prescription?: string | null; // PDF field (optional for now)
 }
 
 interface Employee {
@@ -82,8 +85,11 @@ const Home: React.FC = () => {
   const [employee] = useState<Employee>(HARDCODED_EMPLOYEE);
 
   // ESTADOS TABLA
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
   const [loadingTasks, setLoadingTasks] = useState(false);
+  
+  // Employee external_id hardcodeado (emp001, emp002, etc.)
+  const EMPLOYEE_EXTERNAL_ID = 'emp001';
 
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 767);
   
@@ -187,25 +193,51 @@ const Home: React.FC = () => {
   const fetchTasks = async () => {
     setLoadingTasks(true);
     try {
-      const { data } = await supabase
-        .from('tasks')
+      // Primero, obtener el employee_id (int) del external_id (varchar)
+      const { data: employeeData, error: employeeError } = await supabase
+        .from('employees')
+        .select('employee_id')
+        .eq('external_id', EMPLOYEE_EXTERNAL_ID)
+        .single();
+
+      if (employeeError || !employeeData) {
+        console.error('Error fetching employee:', employeeError);
+        setLoadingTasks(false);
+        return;
+      }
+
+      const employeeId = employeeData.employee_id;
+
+      // Luego, obtener las leave_requests usando el employee_id (int)
+      // Ordenar por start_date (más reciente primero)
+      const { data, error } = await supabase
+        .from('leave_requests')
         .select('*')
-        .order('id', { ascending: true });
+        .eq('employee_id', employeeId)
+        .order('start_date', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching leave requests:', error);
+        return;
+      }
 
       if (data) {
-        const mappedData: Task[] = (data as any[]).map((item: any) => ({
-          requestId: item.id,
-          TypeOfRequest: item.request_type,
-          dateOfEntrance: item.entrance_date,
-          dateOfOut: item.out_date,
-          daysOf: item.days_count,
-          processTime: item.process_time,
-          status: item.status,
+        const mappedData: LeaveRequest[] = data.map((item: Record<string, unknown>) => ({
+          request_id: (item.request_id as number) || 0,
+          employee_id: (item.employee_id as number) || 0,
+          leave_type: (item.leave_type as string) || '',
+          start_date: (item.start_date as string) || '',
+          end_date: (item.end_date as string) || '',
+          approved_days: (item.approved_days as number) || 0,
+          created_at: (item.created_at as string) || undefined,
+          status: (item.status as string) || undefined,
+          decision_source: (item.decision_source as string) || undefined,
+          prescription: (item.prescription as string | null) || null,
         }));
-        setTasks(mappedData);
+        setLeaveRequests(mappedData);
       }
     } catch (error) {
-      console.error(error);
+      console.error('Error fetching leave requests:', error);
     } finally {
       setLoadingTasks(false);
     }
@@ -226,16 +258,26 @@ const Home: React.FC = () => {
           .toUpperCase()
       : 'AU';
 
-  const getStatusBadgeStyle = (status: string) => {
-    switch (status) {
-      case 'Complete':
+  const getStatusBadgeStyle = (status?: string, decisionSource?: string) => {
+    // Si hay status, usarlo; si no, usar decision_source
+    const statusToCheck = status || decisionSource || '';
+    const statusUpper = statusToCheck.toUpperCase();
+    
+    switch (statusUpper) {
+      case 'APPROVED':
+      case 'COMPLETE':
+      case 'ORCHESTRA': // Decision source
         return { bg: '#dcfce7', text: '#166534' };
-      case 'On process':
-        return { bg: '#fef9c3', text: '#854d0e' };
-      case 'Denied':
+      case 'PENDING':
+      case 'ON PROCESS':
+      case 'IN PROCESS':
+        return { bg: 'ffa500', text: '#854d0e' };
+      case 'DENIED':
+      case 'REJECTED':
+      case 'HR_MANUAL': // Decision source
         return { bg: '#fee2e2', text: '#991b1b' };
       default:
-        return { bg: '#f1f5f9', text: '#475569' };
+        return { bg: '#e0f2fe', text: '#0369a1' };
     }
   };
 
@@ -615,7 +657,7 @@ const Home: React.FC = () => {
                               letterSpacing: '0.5px',
                             }}
                           >
-                            TYPE
+                            LEAVE TYPE
                           </th>
                           <th
                             style={{
@@ -628,7 +670,7 @@ const Home: React.FC = () => {
                               letterSpacing: '0.5px',
                             }}
                           >
-                            ENTRANCE
+                            START DATE
                           </th>
                           <th
                             style={{
@@ -641,7 +683,7 @@ const Home: React.FC = () => {
                               letterSpacing: '0.5px',
                             }}
                           >
-                            OUT
+                            END DATE
                           </th>
                           <th
                             style={{
@@ -654,7 +696,7 @@ const Home: React.FC = () => {
                               letterSpacing: '0.5px',
                             }}
                           >
-                            DAYS
+                            APPROVED DAYS
                           </th>
                           <th
                             style={{
@@ -667,7 +709,7 @@ const Home: React.FC = () => {
                               letterSpacing: '0.5px',
                             }}
                           >
-                            TIME
+                            DECISION SOURCE
                           </th>
                           <th
                             style={{
@@ -685,120 +727,170 @@ const Home: React.FC = () => {
                         </tr>
                       </thead>
                       <tbody>
-                        {tasks.map((task, index) => {
-                          const badge = getStatusBadgeStyle(task.status);
-                          return (
-                            <tr
-                              key={task.requestId}
+                        {leaveRequests.length === 0 && !loadingTasks ? (
+                          <tr>
+                            <td
+                              colSpan={7}
                               style={{
-                                borderBottom: '1px solid #f1f5f9',
-                                transition: 'all 0.2s ease',
-                                animation: `fadeInUp 0.4s ease ${index * 0.05}s both`,
-                              }}
-                              onMouseEnter={(e) => {
-                                e.currentTarget.style.backgroundColor = '#fafbfc';
-                                e.currentTarget.style.transform = 'translateX(4px)';
-                                e.currentTarget.style.boxShadow = 'inset 4px 0 0 0 #2563eb';
-                              }}
-                              onMouseLeave={(e) => {
-                                e.currentTarget.style.backgroundColor = 'transparent';
-                                e.currentTarget.style.transform = 'translateX(0)';
-                                e.currentTarget.style.boxShadow = 'none';
+                                padding: '60px 20px',
+                                textAlign: 'center',
+                                color: THEME.textMuted,
+                                fontSize: '14px',
                               }}
                             >
-                              <td
+                              No leave requests found for employee {EMPLOYEE_EXTERNAL_ID}
+                            </td>
+                          </tr>
+                        ) : (
+                          leaveRequests.map((request, index) => {
+                            const badge = getStatusBadgeStyle(request.status, request.decision_source);
+                            const displayStatus = request.status || request.decision_source || '-';
+                            // Formatear fechas
+                            const formatDate = (dateString: string) => {
+                              if (!dateString) return '-';
+                              try {
+                                const date = new Date(dateString);
+                                return date.toLocaleDateString('en-US', {
+                                  year: 'numeric',
+                                  month: 'short',
+                                  day: 'numeric',
+                                });
+                              } catch {
+                                return dateString;
+                              }
+                            };
+
+                            const formatDateTime = (dateString: string) => {
+                              if (!dateString) return '-';
+                              try {
+                                const date = new Date(dateString);
+                                return date.toLocaleDateString('en-US', {
+                                  year: 'numeric',
+                                  month: 'short',
+                                  day: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                });
+                              } catch {
+                                return dateString;
+                              }
+                            };
+
+                            return (
+                              <tr
+                                key={request.request_id}
                                 style={{
-                                  padding: '20px 16px',
-                                  fontSize: '14px',
-                                  fontWeight: '600',
-                                  color: THEME.textMain,
+                                  borderBottom: '1px solid #f1f5f9',
+                                  transition: 'all 0.2s ease',
+                                  animation: `fadeInUp 0.4s ease ${index * 0.05}s both`,
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.backgroundColor = '#fafbfc';
+                                  e.currentTarget.style.transform = 'translateX(4px)';
+                                  e.currentTarget.style.boxShadow = 'inset 4px 0 0 0 #2563eb';
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.backgroundColor = 'transparent';
+                                  e.currentTarget.style.transform = 'translateX(0)';
+                                  e.currentTarget.style.boxShadow = 'none';
                                 }}
                               >
-                                #{task.requestId}
-                              </td>
-                              <td
-                                style={{ 
-                                  padding: '20px 16px', 
-                                  fontSize: '14px',
-                                  fontWeight: '500',
-                                  color: THEME.textMain,
-                                }}
-                              >
-                                {task.TypeOfRequest}
-                              </td>
-                              <td
-                                style={{
-                                  padding: '20px 16px',
-                                  fontSize: '14px',
-                                  color: THEME.textMuted,
-                                  fontWeight: '500',
-                                }}
-                              >
-                                {task.dateOfEntrance}
-                              </td>
-                              <td
-                                style={{
-                                  padding: '20px 16px',
-                                  fontSize: '14px',
-                                  color: THEME.textMuted,
-                                  fontWeight: '500',
-                                }}
-                              >
-                                {task.dateOfOut}
-                              </td>
-                              <td
-                                style={{
-                                  padding: '20px 16px',
-                                  textAlign: 'center',
-                                  fontSize: '14px',
-                                  fontWeight: '600',
-                                  color: THEME.textMain,
-                                }}
-                              >
-                                {task.daysOf}
-                              </td>
-                              <td
-                                style={{
-                                  padding: '20px 16px',
-                                  color: THEME.textMuted,
-                                  fontSize: '14px',
-                                  fontWeight: '500',
-                                }}
-                              >
-                                {task.processTime}
-                              </td>
-                              <td
-                                style={{
-                                  padding: '20px 16px',
-                                  textAlign: 'right',
-                                }}
-                              >
-                                <span
+                                <td
                                   style={{
-                                    fontSize: '11px',
-                                    fontWeight: '700',
-                                    padding: '6px 12px',
-                                    borderRadius: '20px',
-                                    backgroundColor: badge.bg,
-                                    color: badge.text,
-                                    display: 'inline-block',
-                                    textTransform: 'uppercase',
-                                    letterSpacing: '0.5px',
-                                    transition: 'transform 0.2s ease',
-                                  }}
-                                  onMouseEnter={(e) => {
-                                    e.currentTarget.style.transform = 'scale(1.05)';
-                                  }}
-                                  onMouseLeave={(e) => {
-                                    e.currentTarget.style.transform = 'scale(1)';
+                                    padding: '20px 16px',
+                                    fontSize: '14px',
+                                    fontWeight: '600',
+                                    color: THEME.textMain,
                                   }}
                                 >
-                                  {task.status}
-                                </span>
-                              </td>
-                            </tr>
-                          );
-                        })}
+                                  #{request.request_id}
+                                </td>
+                                <td
+                                  style={{ 
+                                    padding: '20px 16px', 
+                                    fontSize: '14px',
+                                    fontWeight: '600',
+                                    color: THEME.textMain,
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.5px',
+                                  }}
+                                >
+                                  {request.leave_type || '-'}
+                                </td>
+                                <td
+                                  style={{
+                                    padding: '20px 16px',
+                                    fontSize: '14px',
+                                    color: THEME.textMuted,
+                                    fontWeight: '500',
+                                  }}
+                                >
+                                  {formatDate(request.start_date)}
+                                </td>
+                                <td
+                                  style={{
+                                    padding: '20px 16px',
+                                    fontSize: '14px',
+                                    color: THEME.textMuted,
+                                    fontWeight: '500',
+                                  }}
+                                >
+                                  {formatDate(request.end_date)}
+                                </td>
+                                <td
+                                  style={{
+                                    padding: '20px 16px',
+                                    textAlign: 'center',
+                                    fontSize: '14px',
+                                    fontWeight: '600',
+                                    color: THEME.textMain,
+                                  }}
+                                >
+                                  {request.approved_days || 0}
+                                </td>
+                                <td
+                                  style={{
+                                    padding: '20px 16px',
+                                    color: THEME.textMuted,
+                                    fontSize: '13px',
+                                    fontWeight: '500',
+                                  }}
+                                >
+                                  {request.decision_source || '-'}
+                                </td>
+                                <td
+                                  style={{
+                                    padding: '20px 16px',
+                                    textAlign: 'right',
+                                  }}
+                                >
+                                  <span
+                                    style={{
+                                      fontSize: '11px',
+                                      fontWeight: '700',
+                                      padding: '6px 12px',
+                                      borderRadius: '20px',
+                                      backgroundColor: badge.bg,
+                                      color: badge.text,
+                                      display: 'inline-block',
+                                      textTransform: 'uppercase',
+                                      letterSpacing: '0.5px',
+                                      transition: 'transform 0.2s ease',
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      e.currentTarget.style.transform = 'scale(1.05)';
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      e.currentTarget.style.transform = 'scale(1)';
+                                    }}
+                                  >
+                                    {displayStatus}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
                       </tbody>
                     </table>
                   </div>
