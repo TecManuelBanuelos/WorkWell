@@ -339,10 +339,14 @@ const Home: React.FC = () => {
       console.log('Updating database with ref_pdf:', refPdfValue);
       console.log('Request ID:', requestId);
 
-      // Actualizar el campo ref_pdf en la base de datos
+      // Actualizar el campo ref_pdf y status en la base de datos
+      // Si ref_pdf tiene valor, status debe ser "On process"
       const { data: updateData, error: updateError } = await supabase
         .from('leave_requests')
-        .update({ ref_pdf: refPdfValue })
+        .update({ 
+          ref_pdf: refPdfValue,
+          status: 'On process' // Actualizar status cuando se sube un PDF
+        })
         .eq('request_id', requestId)
         .select(); // Agregar .select() para ver qué se actualizó
 
@@ -382,11 +386,11 @@ const Home: React.FC = () => {
 
       console.log('Database updated successfully. Updated rows:', updateData);
 
-      // Actualizar el estado local
+      // Actualizar el estado local (ref_pdf y status)
       setLeaveRequests(prevRequests =>
         prevRequests.map(req =>
           req.request_id === requestId
-            ? { ...req, ref_pdf: refPdfValue }
+            ? { ...req, ref_pdf: refPdfValue, status: 'On process' }
             : req
         )
       );
