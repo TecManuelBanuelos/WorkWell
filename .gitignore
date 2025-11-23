@@ -22,3 +22,16 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+# --- Python Backend ---
+
+# Entorno virtual
+backend/venv/
+venv/
+
+# Variables de entorno (Secretos)
+.env
+*.env
+
+# Archivos compilados de Python (Cache)
+__pycache__/
+*.pyc
