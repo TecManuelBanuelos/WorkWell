@@ -71,35 +71,35 @@ declare global {
   }
 }
 
-// EMPLEADO HARDCODEADO
+// HARDCODED EMPLOYEE
 const HARDCODED_EMPLOYEE: Employee = {
   id: 1,
   name: 'Juan Pérez',
   email: 'juan.perez@empresa.com',
-  department: 'Recursos Humanos',
-  position: 'Gerente de RRHH',
+  department: 'Human Resources',
+  position: 'HR Manager',
 };
 
 const Home: React.FC = () => {
   const navigate = useNavigate();
 
-  // DATOS USUARIO HARDCODEADO
+  // HARDCODED USER DATA
   const [employee] = useState<Employee>(HARDCODED_EMPLOYEE);
 
-  // ESTADOS TABLA
+  // TABLE STATES
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
   const [loadingTasks, setLoadingTasks] = useState(false);
-  const [uploadingPdf, setUploadingPdf] = useState<number | null>(null); // request_id que está subiendo
+  const [uploadingPdf, setUploadingPdf] = useState<number | null>(null); // request_id that is uploading
   
   // Employee external_id hardcodeado (emp001, emp002, etc.)
   const EMPLOYEE_EXTERNAL_ID = 'emp001';
 
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 767);
-  
-  // ESTADO MENÚ USUARIO
+
+  // USER MENU STATE
   const [showUserMenu, setShowUserMenu] = useState(false);
 
-  // optional: actualizar isMobile al redimensionar
+  // optional: update isMobile on resize
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth <= 767);
     window.addEventListener('resize', handler);
@@ -188,7 +188,7 @@ const Home: React.FC = () => {
     };
   }, []);
 
-  // --- 2. LÓGICA DE DATOS (TABLA) ---
+  // --- 2. DATA LOGIC (TABLE) ---
   useEffect(() => {
     fetchTasks();
   }, []);
@@ -196,7 +196,7 @@ const Home: React.FC = () => {
   const fetchTasks = async () => {
     setLoadingTasks(true);
     try {
-      // Primero, obtener el employee_id (int) del external_id (varchar)
+      // First, get the employee_id (int) from external_id (varchar)
       const { data: employeeData, error: employeeError } = await supabase
         .from('employees')
         .select('employee_id')
@@ -211,8 +211,8 @@ const Home: React.FC = () => {
 
       const employeeId = employeeData.employee_id;
 
-      // Luego, obtener las leave_requests usando el employee_id (int)
-      // Ordenar por start_date (más reciente primero)
+      // Then, get leave_requests using the employee_id (int)
+      // Sort by start_date (most recent first)
       const { data, error } = await supabase
         .from('leave_requests')
         .select('*')
@@ -253,7 +253,7 @@ const Home: React.FC = () => {
     navigate('/login');
   };
 
-  // Función para subir PDF a Supabase Storage
+  // Function to upload PDF to Supabase Storage
   const handlePdfUpload = async (requestId: number, file: File) => {
     setUploadingPdf(requestId);
     try {
@@ -263,31 +263,31 @@ const Home: React.FC = () => {
       console.log('File size:', file.size);
       console.log('File type:', file.type);
       
-      // Validar que sea un PDF
+      // Validate that it's a PDF
       if (file.type !== 'application/pdf') {
-        alert('Solo se permiten archivos PDF.');
+        alert('Only PDF files are allowed.');
         setUploadingPdf(null);
         return;
       }
 
-      // Validar tamaño (10MB máximo)
+      // Validate size (10MB maximum)
       if (file.size > 10 * 1024 * 1024) {
-        alert('El archivo PDF no debe exceder los 10MB.');
+        alert('The PDF file must not exceed 10MB.');
         setUploadingPdf(null);
         return;
       }
 
-      // Crear un nombre único para el archivo
+      // Create a unique name for the file
       const fileExt = file.name.split('.').pop();
       const fileName = `${EMPLOYEE_EXTERNAL_ID}_${requestId}_${Date.now()}.${fileExt}`;
-      const filePath = fileName; // Guardar directamente en la raíz del bucket
+      const filePath = fileName; // Save directly in the root of the bucket
 
       console.log('Uploading file:', fileName);
       console.log('File path:', filePath);
 
-      // Subir el archivo a Supabase Storage
+      // Upload the file to Supabase Storage
       const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('prescription') // Nombre del bucket en Supabase Storage (singular)
+        .from('prescription') // Bucket name in Supabase Storage (singular)
         .upload(filePath, file, {
           cacheControl: '3600',
           upsert: false
@@ -297,7 +297,7 @@ const Home: React.FC = () => {
 
       if (uploadError) {
         console.error('Error uploading PDF:', uploadError);
-        // Type assertion para acceder a propiedades adicionales del error
+        // Type assertion to access additional error properties
         interface StorageErrorExtended {
           statusCode?: string | number;
           status?: string | number;
@@ -312,19 +312,19 @@ const Home: React.FC = () => {
           error: extendedError.error
         });
         
-        // Mostrar mensaje de error más específico
-        let errorMessage = 'Error al subir el PDF.';
+        // Show more specific error message
+        let errorMessage = 'Error uploading PDF.';
         if (uploadError.message) {
-          errorMessage += `\n\nDetalles: ${uploadError.message}`;
+          errorMessage += `\n\nDetails: ${uploadError.message}`;
         }
-        // Verificar el código de estado del error
+        // Check the error status code
         const errorStatus = extendedError.statusCode || extendedError.status;
         if (errorStatus === '409' || errorStatus === 409) {
-          errorMessage += '\n\nEl archivo ya existe. Intenta con otro nombre.';
+          errorMessage += '\n\nThe file already exists. Try with another name.';
         } else if (errorStatus === '413' || errorStatus === 413) {
-          errorMessage += '\n\nEl archivo es demasiado grande.';
+          errorMessage += '\n\nThe file is too large.';
         } else if (errorStatus === '403' || errorStatus === 403) {
-          errorMessage += '\n\nNo tienes permisos para subir archivos. Verifica las políticas de acceso del bucket.';
+          errorMessage += '\n\nYou do not have permission to upload files. Check the bucket access policies.';
         }
         
         alert(errorMessage);
@@ -332,23 +332,23 @@ const Home: React.FC = () => {
         return;
       }
 
-      // Guardar solo el nombre del archivo en ref_pdf
-      // Esto es consistente con lo que veo en la base de datos (solo nombres de archivo)
+      // Save only the file name in ref_pdf
+      // This is consistent with what I see in the database (only file names)
       const refPdfValue = fileName;
 
       console.log('Updating database with ref_pdf:', refPdfValue);
       console.log('Request ID:', requestId);
 
-      // Actualizar el campo ref_pdf y status en la base de datos
-      // Si ref_pdf tiene valor, status debe ser "On process"
+      // Update the ref_pdf and status fields in the database
+      // If ref_pdf has a value, status must be "On process"
       const { data: updateData, error: updateError } = await supabase
         .from('leave_requests')
         .update({ 
           ref_pdf: refPdfValue,
-          status: 'On process' // Actualizar status cuando se sube un PDF
+          status: 'On process' // Update status when a PDF is uploaded
         })
         .eq('request_id', requestId)
-        .select(); // Agregar .select() para ver qué se actualizó
+        .select(); // Add .select() to see what was updated
 
       console.log('Update result:', { updateData, updateError });
 
@@ -361,32 +361,32 @@ const Home: React.FC = () => {
           code: updateError.code
         });
         
-        let errorMessage = 'Error al actualizar la base de datos.';
+        let errorMessage = 'Error updating database.';
         if (updateError.message) {
-          errorMessage += `\n\nDetalles: ${updateError.message}`;
+          errorMessage += `\n\nDetails: ${updateError.message}`;
         }
         if (updateError.hint) {
-          errorMessage += `\n\nSugerencia: ${updateError.hint}`;
+          errorMessage += `\n\nHint: ${updateError.hint}`;
         }
         if (updateError.message?.includes('row-level security') || updateError.message?.includes('RLS')) {
-          errorMessage += '\n\n⚠️ Problema de políticas RLS: Necesitas configurar políticas que permitan actualizar la tabla leave_requests.';
+          errorMessage += '\n\n⚠️ RLS policy issue: You need to configure policies that allow updating the leave_requests table.';
         }
         alert(errorMessage);
         setUploadingPdf(null);
         return;
       }
 
-      // Verificar que se actualizó correctamente
+      // Verify that it was updated correctly
       if (!updateData || updateData.length === 0) {
-        console.warn('No se encontró ningún registro para actualizar. Request ID:', requestId);
-        alert(`Advertencia: No se encontró ningún registro con request_id = ${requestId} para actualizar.`);
+        console.warn('No record found to update. Request ID:', requestId);
+        alert(`Warning: No record found with request_id = ${requestId} to update.`);
         setUploadingPdf(null);
         return;
       }
 
       console.log('Database updated successfully. Updated rows:', updateData);
 
-      // Actualizar el estado local (ref_pdf y status)
+      // Update local state (ref_pdf and status)
       setLeaveRequests(prevRequests =>
         prevRequests.map(req =>
           req.request_id === requestId
@@ -396,15 +396,15 @@ const Home: React.FC = () => {
       );
 
       console.log('PDF uploaded successfully!');
-      alert('PDF subido exitosamente');
+      alert('PDF uploaded successfully');
     } catch (error) {
       console.error('Error in PDF upload:', error);
       console.error('Error type:', typeof error);
       console.error('Error details:', error);
       
-      let errorMessage = 'Error al subir el PDF.';
+      let errorMessage = 'Error uploading PDF.';
       if (error instanceof Error) {
-        errorMessage += `\n\nDetalles: ${error.message}`;
+        errorMessage += `\n\nDetails: ${error.message}`;
       }
       alert(errorMessage);
     } finally {
@@ -423,7 +423,7 @@ const Home: React.FC = () => {
       : 'AU';
 
   const getStatusBadgeStyle = (status?: string, decisionSource?: string) => {
-    // Si hay status, usarlo; si no, usar decision_source
+    // If there's a status, use it; otherwise, use decision_source
     const statusToCheck = status || decisionSource || '';
     const statusUpper = statusToCheck.toUpperCase();
     
@@ -564,7 +564,7 @@ const Home: React.FC = () => {
             }}
           >
             <div
-              title={employee ? employee.name : 'Usuario'}
+              title={employee ? employee.name : 'User'}
               style={{
                 width: '40px',
                 height: '40px',
@@ -620,7 +620,7 @@ const Home: React.FC = () => {
                   setShowUserMenu(false);
                 }}
               >
-                {/* Información del usuario */}
+                {/* User information */}
                 <div
                   style={{
                     padding: '16px',
@@ -656,7 +656,7 @@ const Home: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Botón de logout */}
+                {/* Logout button */}
                 <div
                   onClick={handleLogout}
                   style={{
@@ -680,7 +680,7 @@ const Home: React.FC = () => {
                   }}
                 >
                   <span>🚪</span>
-                  Cerrar sesión
+                  Logout
                 </div>
               </div>
             )}
@@ -699,7 +699,7 @@ const Home: React.FC = () => {
             backgroundColor: '#f8fafc',
           }}
         >
-          {/* VISTA TABLA */}
+          {/* TABLE VIEW */}
           <div
             style={{
               flex: 1,
@@ -727,7 +727,7 @@ const Home: React.FC = () => {
                 >
                   {employee
                     ? `${employee.name.split(' ')[0]}'s requests`
-                    : 'Historial General'}
+                    : 'General History'}
                 </h2>
                 {employee && (
                   <span
@@ -779,7 +779,7 @@ const Home: React.FC = () => {
                       borderRadius: '50%',
                       animation: 'spin 1s linear infinite',
                     }}></div>
-                    <div style={{ marginTop: '16px' }}>Cargando...</div>
+                    <div style={{ marginTop: '16px' }}>Loading...</div>
                   </div>
                 ) : (
                   <div style={{ overflowX: 'auto' }}>
@@ -935,7 +935,7 @@ const Home: React.FC = () => {
                           leaveRequests.map((request, index) => {
                             const badge = getStatusBadgeStyle(request.status, request.decision_source);
                             const displayStatus = request.status || request.decision_source || '-';
-                            // Formatear fechas
+                            // Format dates
                             const formatDate = (dateString: string) => {
                               if (!dateString) return '-';
                               try {
@@ -1080,14 +1080,14 @@ const Home: React.FC = () => {
                                       target="_blank"
                                       rel="noopener noreferrer"
                                       onClick={async (e) => {
-                                        // Verificar que el archivo existe antes de abrir
+                                        // Verify that the file exists before opening
                                         if (request.ref_pdf && !request.ref_pdf.startsWith('http')) {
                                           e.preventDefault();
                                           
                                           const originalFileName = request.ref_pdf.trim();
                                           const fileName = originalFileName;
                                           
-                                          // Listar todos los archivos en el bucket para debug
+                                          // List all files in the bucket for debug
                                           const { data: allFiles, error: listError } = await supabase.storage
                                             .from('prescription')
                                             .list('', {
@@ -1103,11 +1103,11 @@ const Home: React.FC = () => {
                                           
                                           if (listError) {
                                             console.error('Error listing files:', listError);
-                                            alert(`Error al acceder al storage: ${listError.message}`);
+                                            alert(`Error accessing storage: ${listError.message}`);
                                             return;
                                           }
                                           
-                                          // Buscar el archivo de manera flexible
+                                          // Search for the file flexibly
                                           let foundFile = allFiles?.find(file => 
                                             file.name === fileName || 
                                             file.name === originalFileName ||
@@ -1115,9 +1115,9 @@ const Home: React.FC = () => {
                                             file.name.toLowerCase() === originalFileName.toLowerCase()
                                           );
                                           
-                                          // Si no se encuentra exacto, buscar por similitud (normalizando caracteres similares)
+                                          // If not found exactly, search by similarity (normalizing similar characters)
                                           if (!foundFile) {
-                                            // Normalizar nombres: reemplazar caracteres similares (I/l/1, O/0, etc.)
+                                            // Normalize names: replace similar characters (I/l/1, O/0, etc.)
                                             const normalizeName = (name: string) => {
                                               return name
                                                 .toLowerCase()
@@ -1139,9 +1139,9 @@ const Home: React.FC = () => {
                                             });
                                           }
                                           
-                                          // Si aún no se encuentra, buscar por el número inicial (más único)
+                                          // If still not found, search by initial number (more unique)
                                           if (!foundFile) {
-                                            // Extraer el número inicial del nombre (ej: "434704698" de "434704698-37I736047-...")
+                                            // Extract the initial number from the name (e.g., "434704698" from "434704698-37I736047-...")
                                             const initialNumberMatch = originalFileName.match(/^(\d+)/);
                                             if (initialNumberMatch) {
                                               const initialNumber = initialNumberMatch[1];
@@ -1151,12 +1151,12 @@ const Home: React.FC = () => {
                                             }
                                           }
                                           
-                                          // Último intento: buscar por similitud de Levenshtein (búsqueda por parte del nombre)
+                                          // Last attempt: search by Levenshtein similarity (search by part of the name)
                                           if (!foundFile) {
                                             const searchName = originalFileName.replace('.pdf', '').toLowerCase();
                                             foundFile = allFiles?.find(file => {
                                               const fileNameLower = file.name.toLowerCase().replace('.pdf', '');
-                                              // Buscar si al menos el 70% del nombre coincide
+                                              // Search if at least 70% of the name matches
                                               const similarity = calculateSimilarity(searchName, fileNameLower);
                                               return similarity > 0.7 || 
                                                      fileNameLower.includes(searchName.substring(0, 10)) ||
@@ -1164,7 +1164,7 @@ const Home: React.FC = () => {
                                             });
                                           }
                                           
-                                          // Función auxiliar para calcular similitud simple
+                                          // Helper function to calculate simple similarity
                                           function calculateSimilarity(str1: string, str2: string): number {
                                             const longer = str1.length > str2.length ? str1 : str2;
                                             const shorter = str1.length > str2.length ? str2 : str1;
@@ -1204,22 +1204,22 @@ const Home: React.FC = () => {
                                               availableFiles: allFiles?.map(f => f.name)
                                             });
                                             
-                                            const availableFilesList = allFiles?.map(f => f.name).join('\n') || 'Ninguno';
+                                            const availableFilesList = allFiles?.map(f => f.name).join('\n') || 'None';
                                             alert(
-                                              `El archivo PDF no se encontró en el storage.\n\n` +
-                                              `Buscado: ${fileName}\n` +
+                                              `PDF file not found in storage.\n\n` +
+                                              `Searched: ${fileName}\n` +
                                               `Original: ${request.ref_pdf || 'N/A'}\n\n` +
-                                              `Archivos disponibles en el bucket:\n${availableFilesList}\n\n` +
-                                              `Revisa la consola para más detalles.`
+                                              `Available files in bucket:\n${availableFilesList}\n\n` +
+                                              `Check the console for more details.`
                                             );
                                             return;
                                           }
                                           
-                                          // Usar el nombre exacto del archivo encontrado
+                                          // Use the exact name of the found file
                                           const actualFileName = foundFile.name;
                                           console.log('File found! Using:', actualFileName);
                                           
-                                          // Construir la URL y abrir
+                                          // Build the URL and open
                                           const { data: urlData } = supabase.storage
                                             .from('prescription')
                                             .getPublicUrl(actualFileName);
@@ -1250,7 +1250,7 @@ const Home: React.FC = () => {
                                         e.currentTarget.style.transform = 'scale(1)';
                                       }}
                                     >
-                                      📄 Ver PDF
+                                      📄 View PDF
                                     </a>
                                   ) : (
                                     <label
@@ -1294,11 +1294,11 @@ const Home: React.FC = () => {
                                               animation: 'spin 1s linear infinite',
                                             }}
                                           ></span>
-                                          Subiendo...
+                                          Uploading...
                                         </>
                                       ) : (
                                         <>
-                                          📤 Subir PDF
+                                          📤 Upload PDF
                                           <input
                                             type="file"
                                             accept=".pdf,application/pdf"
@@ -1307,11 +1307,11 @@ const Home: React.FC = () => {
                                               const file = e.target.files?.[0];
                                               if (file) {
                                                 if (file.type !== 'application/pdf') {
-                                                  alert('Por favor, selecciona un archivo PDF');
+                                                  alert('Please select a PDF file');
                                                   return;
                                                 }
                                                 if (file.size > 10 * 1024 * 1024) {
-                                                  alert('El archivo es demasiado grande. Máximo 10MB');
+                                                  alert('The file is too large. Maximum 10MB');
                                                   return;
                                                 }
                                                 handlePdfUpload(request.request_id, file);
