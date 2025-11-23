@@ -34,6 +34,7 @@ interface LeaveRequest {
   status?: string; // Optional, might not exist
   decision_source?: string; // ORCHESTRA, HR_MANUAL, etc.
   prescription?: string | null; // PDF field (optional for now)
+  ref_pdf?: string | null; // URL to PDF in Supabase Storage
 }
 
 interface Employee {
@@ -81,13 +82,14 @@ const HARDCODED_EMPLOYEE: Employee = {
 
 const Home: React.FC = () => {
   const navigate = useNavigate();
-  
+
   // DATOS USUARIO HARDCODEADO
   const [employee] = useState<Employee>(HARDCODED_EMPLOYEE);
 
   // ESTADOS TABLA
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
   const [loadingTasks, setLoadingTasks] = useState(false);
+  const [uploadingPdf, setUploadingPdf] = useState<number | null>(null); // request_id que está subiendo
   
   // Employee external_id hardcodeado (emp001, emp002, etc.)
   const EMPLOYEE_EXTERNAL_ID = 'emp001';
@@ -235,6 +237,7 @@ const Home: React.FC = () => {
           status: (item.status as string) || undefined,
           decision_source: (item.decision_source as string) || undefined,
           prescription: (item.prescription as string | null) || null,
+          ref_pdf: (item.ref_pdf as string | null) || null,
         }));
         setLeaveRequests(mappedData);
       }
@@ -248,6 +251,165 @@ const Home: React.FC = () => {
   const handleLogout = async () => {
     await supabase.auth.signOut();
     navigate('/login');
+  };
+
+  // Función para subir PDF a Supabase Storage
+  const handlePdfUpload = async (requestId: number, file: File) => {
+    setUploadingPdf(requestId);
+    try {
+      console.log('=== PDF Upload Debug ===');
+      console.log('Request ID:', requestId);
+      console.log('File name:', file.name);
+      console.log('File size:', file.size);
+      console.log('File type:', file.type);
+      
+      // Validar que sea un PDF
+      if (file.type !== 'application/pdf') {
+        alert('Solo se permiten archivos PDF.');
+        setUploadingPdf(null);
+        return;
+      }
+
+      // Validar tamaño (10MB máximo)
+      if (file.size > 10 * 1024 * 1024) {
+        alert('El archivo PDF no debe exceder los 10MB.');
+        setUploadingPdf(null);
+        return;
+      }
+
+      // Crear un nombre único para el archivo
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${EMPLOYEE_EXTERNAL_ID}_${requestId}_${Date.now()}.${fileExt}`;
+      const filePath = fileName; // Guardar directamente en la raíz del bucket
+
+      console.log('Uploading file:', fileName);
+      console.log('File path:', filePath);
+
+      // Subir el archivo a Supabase Storage
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('prescription') // Nombre del bucket en Supabase Storage (singular)
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      console.log('Upload result:', { uploadData, uploadError });
+
+      if (uploadError) {
+        console.error('Error uploading PDF:', uploadError);
+        // Type assertion para acceder a propiedades adicionales del error
+        interface StorageErrorExtended {
+          statusCode?: string | number;
+          status?: string | number;
+          error?: unknown;
+        }
+        
+        const extendedError = uploadError as StorageErrorExtended;
+        
+        console.error('Error details:', {
+          message: uploadError.message,
+          statusCode: extendedError.statusCode || extendedError.status,
+          error: extendedError.error
+        });
+        
+        // Mostrar mensaje de error más específico
+        let errorMessage = 'Error al subir el PDF.';
+        if (uploadError.message) {
+          errorMessage += `\n\nDetalles: ${uploadError.message}`;
+        }
+        // Verificar el código de estado del error
+        const errorStatus = extendedError.statusCode || extendedError.status;
+        if (errorStatus === '409' || errorStatus === 409) {
+          errorMessage += '\n\nEl archivo ya existe. Intenta con otro nombre.';
+        } else if (errorStatus === '413' || errorStatus === 413) {
+          errorMessage += '\n\nEl archivo es demasiado grande.';
+        } else if (errorStatus === '403' || errorStatus === 403) {
+          errorMessage += '\n\nNo tienes permisos para subir archivos. Verifica las políticas de acceso del bucket.';
+        }
+        
+        alert(errorMessage);
+        setUploadingPdf(null);
+        return;
+      }
+
+      // Guardar solo el nombre del archivo en ref_pdf
+      // Esto es consistente con lo que veo en la base de datos (solo nombres de archivo)
+      const refPdfValue = fileName;
+
+      console.log('Updating database with ref_pdf:', refPdfValue);
+      console.log('Request ID:', requestId);
+
+      // Actualizar el campo ref_pdf y status en la base de datos
+      // Si ref_pdf tiene valor, status debe ser "On process"
+      const { data: updateData, error: updateError } = await supabase
+        .from('leave_requests')
+        .update({ 
+          ref_pdf: refPdfValue,
+          status: 'On process' // Actualizar status cuando se sube un PDF
+        })
+        .eq('request_id', requestId)
+        .select(); // Agregar .select() para ver qué se actualizó
+
+      console.log('Update result:', { updateData, updateError });
+
+      if (updateError) {
+        console.error('Error updating ref_pdf:', updateError);
+        console.error('Error details:', {
+          message: updateError.message,
+          details: updateError.details,
+          hint: updateError.hint,
+          code: updateError.code
+        });
+        
+        let errorMessage = 'Error al actualizar la base de datos.';
+        if (updateError.message) {
+          errorMessage += `\n\nDetalles: ${updateError.message}`;
+        }
+        if (updateError.hint) {
+          errorMessage += `\n\nSugerencia: ${updateError.hint}`;
+        }
+        if (updateError.message?.includes('row-level security') || updateError.message?.includes('RLS')) {
+          errorMessage += '\n\n⚠️ Problema de políticas RLS: Necesitas configurar políticas que permitan actualizar la tabla leave_requests.';
+        }
+        alert(errorMessage);
+        setUploadingPdf(null);
+        return;
+      }
+
+      // Verificar que se actualizó correctamente
+      if (!updateData || updateData.length === 0) {
+        console.warn('No se encontró ningún registro para actualizar. Request ID:', requestId);
+        alert(`Advertencia: No se encontró ningún registro con request_id = ${requestId} para actualizar.`);
+        setUploadingPdf(null);
+        return;
+      }
+
+      console.log('Database updated successfully. Updated rows:', updateData);
+
+      // Actualizar el estado local (ref_pdf y status)
+      setLeaveRequests(prevRequests =>
+        prevRequests.map(req =>
+          req.request_id === requestId
+            ? { ...req, ref_pdf: refPdfValue, status: 'On process' }
+            : req
+        )
+      );
+
+      console.log('PDF uploaded successfully!');
+      alert('PDF subido exitosamente');
+    } catch (error) {
+      console.error('Error in PDF upload:', error);
+      console.error('Error type:', typeof error);
+      console.error('Error details:', error);
+      
+      let errorMessage = 'Error al subir el PDF.';
+      if (error instanceof Error) {
+        errorMessage += `\n\nDetalles: ${error.message}`;
+      }
+      alert(errorMessage);
+    } finally {
+      setUploadingPdf(null);
+    }
   };
 
   const getInitials = (name: string) =>
@@ -408,15 +570,15 @@ const Home: React.FC = () => {
                 height: '40px',
                 background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
                 color: '#ffffff',
-                borderRadius: '50%',
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                fontSize: '14px',
+              borderRadius: '50%',
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              fontSize: '14px',
                 fontWeight: '700',
                 border: '3px solid #ffffff',
                 boxShadow: THEME.shadowMd,
-                cursor: 'pointer',
+              cursor: 'pointer',
                 transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                 animation: 'fadeIn 0.5s ease',
               }}
@@ -429,10 +591,10 @@ const Home: React.FC = () => {
                 e.currentTarget.style.transform = 'scale(1)';
                 e.currentTarget.style.boxShadow = THEME.shadowMd;
                 e.currentTarget.style.borderColor = '#ffffff';
-              }}
-            >
-              {employee ? getInitials(employee.name) : 'AU'}
-            </div>
+            }}
+          >
+            {employee ? getInitials(employee.name) : 'AU'}
+          </div>
 
             {/* Menú desplegable */}
             {showUserMenu && employee && (
@@ -729,6 +891,19 @@ const Home: React.FC = () => {
                           <th
                             style={{
                               padding: '20px 16px',
+                              textAlign: 'center',
+                              fontSize: '11px',
+                              color: '#64748b',
+                              fontWeight: '700',
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.5px',
+                            }}
+                          >
+                            PDF
+                          </th>
+                          <th
+                            style={{
+                              padding: '20px 16px',
                               textAlign: 'right',
                               fontSize: '11px',
                               color: '#64748b',
@@ -745,7 +920,7 @@ const Home: React.FC = () => {
                         {leaveRequests.length === 0 && !loadingTasks ? (
                           <tr>
                             <td
-                              colSpan={8}
+                              colSpan={9}
                               style={{
                                 padding: '60px 20px',
                                 textAlign: 'center',
@@ -775,11 +950,11 @@ const Home: React.FC = () => {
                               }
                             };
 
-                            return (
-                              <tr
+                          return (
+                            <tr
                                 key={request.request_id}
-                                style={{
-                                  borderBottom: '1px solid #f1f5f9',
+                              style={{
+                                borderBottom: '1px solid #f1f5f9',
                                   transition: 'all 0.2s ease',
                                   animation: `fadeInUp 0.4s ease ${index * 0.05}s both`,
                                 }}
@@ -792,19 +967,19 @@ const Home: React.FC = () => {
                                   e.currentTarget.style.backgroundColor = 'transparent';
                                   e.currentTarget.style.transform = 'translateX(0)';
                                   e.currentTarget.style.boxShadow = 'none';
-                                }}
-                              >
-                                <td
-                                  style={{
+                              }}
+                            >
+                              <td
+                                style={{
                                     padding: '20px 16px',
-                                    fontSize: '14px',
+                                  fontSize: '14px',
                                     fontWeight: '600',
                                     color: THEME.textMain,
-                                  }}
-                                >
+                                }}
+                              >
                                   #{request.request_id}
-                                </td>
-                                <td
+                              </td>
+                              <td
                                   style={{ 
                                     padding: '20px 16px', 
                                     fontSize: '14px',
@@ -815,40 +990,40 @@ const Home: React.FC = () => {
                                   }}
                                 >
                                   {request.leave_type || '-'}
-                                </td>
-                                <td
-                                  style={{
+                              </td>
+                              <td
+                                style={{
                                     padding: '20px 16px',
-                                    fontSize: '14px',
-                                    color: THEME.textMuted,
+                                  fontSize: '14px',
+                                  color: THEME.textMuted,
                                     fontWeight: '500',
-                                  }}
-                                >
+                                }}
+                              >
                                   {formatDate(request.start_date)}
-                                </td>
-                                <td
-                                  style={{
+                              </td>
+                              <td
+                                style={{
                                     padding: '20px 16px',
-                                    fontSize: '14px',
-                                    color: THEME.textMuted,
+                                  fontSize: '14px',
+                                  color: THEME.textMuted,
                                     fontWeight: '500',
-                                  }}
-                                >
+                                }}
+                              >
                                   {formatDate(request.end_date)}
-                                </td>
-                                <td
-                                  style={{
+                              </td>
+                              <td
+                                style={{
                                     padding: '20px 16px',
-                                    textAlign: 'center',
+                                  textAlign: 'center',
                                     fontSize: '14px',
                                     fontWeight: '600',
                                     color: THEME.textMain,
-                                  }}
-                                >
+                                }}
+                              >
                                   {request.days_requested || 0}
-                                </td>
-                                <td
-                                  style={{
+                              </td>
+                              <td
+                                style={{
                                     padding: '20px 16px',
                                     textAlign: 'center',
                                     fontSize: '14px',
@@ -861,12 +1036,293 @@ const Home: React.FC = () => {
                                 <td
                                   style={{
                                     padding: '20px 16px',
-                                    color: THEME.textMuted,
+                                  color: THEME.textMuted,
                                     fontSize: '13px',
                                     fontWeight: '500',
+                                }}
+                              >
+                                  {request.decision_source || '-'}
+                              </td>
+                              <td
+                                style={{
+                                    padding: '20px 16px',
+                                    textAlign: 'center',
                                   }}
                                 >
-                                  {request.decision_source || '-'}
+                                  {request.ref_pdf ? (
+                                    <a
+                                      href={(() => {
+                                        // Si ya es una URL completa, usarla directamente
+                                        if (request.ref_pdf.startsWith('http://') || request.ref_pdf.startsWith('https://')) {
+                                          return request.ref_pdf;
+                                        }
+                                        
+                                        // Si es solo un nombre de archivo, construir la URL completa
+                                        let fileName = request.ref_pdf.trim();
+                                        
+                                        // Si no tiene extensión, intentar agregar .pdf
+                                        if (!fileName.includes('.')) {
+                                          fileName = `${fileName}.pdf`;
+                                        }
+                                        
+                                        const { data } = supabase.storage
+                                          .from('prescription')
+                                          .getPublicUrl(fileName);
+                                        
+                                        console.log('PDF URL constructed:', {
+                                          original_ref_pdf: request.ref_pdf,
+                                          processed_fileName: fileName,
+                                          publicUrl: data.publicUrl
+                                        });
+                                        
+                                        return data.publicUrl;
+                                      })()}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      onClick={async (e) => {
+                                        // Verificar que el archivo existe antes de abrir
+                                        if (request.ref_pdf && !request.ref_pdf.startsWith('http')) {
+                                          e.preventDefault();
+                                          
+                                          const originalFileName = request.ref_pdf.trim();
+                                          const fileName = originalFileName;
+                                          
+                                          // Listar todos los archivos en el bucket para debug
+                                          const { data: allFiles, error: listError } = await supabase.storage
+                                            .from('prescription')
+                                            .list('', {
+                                              limit: 100,
+                                              offset: 0,
+                                            });
+                                          
+                                          console.log('=== PDF File Debug ===');
+                                          console.log('Original ref_pdf:', request.ref_pdf);
+                                          console.log('Processed fileName:', fileName);
+                                          console.log('Files in bucket:', allFiles);
+                                          console.log('List error:', listError);
+                                          
+                                          if (listError) {
+                                            console.error('Error listing files:', listError);
+                                            alert(`Error al acceder al storage: ${listError.message}`);
+                                            return;
+                                          }
+                                          
+                                          // Buscar el archivo de manera flexible
+                                          let foundFile = allFiles?.find(file => 
+                                            file.name === fileName || 
+                                            file.name === originalFileName ||
+                                            file.name.toLowerCase() === fileName.toLowerCase() ||
+                                            file.name.toLowerCase() === originalFileName.toLowerCase()
+                                          );
+                                          
+                                          // Si no se encuentra exacto, buscar por similitud (normalizando caracteres similares)
+                                          if (!foundFile) {
+                                            // Normalizar nombres: reemplazar caracteres similares (I/l/1, O/0, etc.)
+                                            const normalizeName = (name: string) => {
+                                              return name
+                                                .toLowerCase()
+                                                .replace(/[il1]/g, '1')  // I, l, 1 -> 1
+                                                .replace(/[o0]/g, '0')   // O, o, 0 -> 0
+                                                .replace(/[s5]/g, '5')   // S, s, 5 -> 5
+                                                .replace(/[z2]/g, '2')   // Z, z, 2 -> 2
+                                                .replace(/[g6]/g, '6')   // G, g, 6 -> 6
+                                                .replace(/[b8]/g, '8');  // B, b, 8 -> 8
+                                            };
+                                            
+                                            const normalizedSearch = normalizeName(originalFileName);
+                                            
+                                            foundFile = allFiles?.find(file => {
+                                              const normalizedFile = normalizeName(file.name);
+                                              return normalizedFile === normalizedSearch ||
+                                                     normalizedFile.includes(normalizedSearch) ||
+                                                     normalizedSearch.includes(normalizedFile);
+                                            });
+                                          }
+                                          
+                                          // Si aún no se encuentra, buscar por el número inicial (más único)
+                                          if (!foundFile) {
+                                            // Extraer el número inicial del nombre (ej: "434704698" de "434704698-37I736047-...")
+                                            const initialNumberMatch = originalFileName.match(/^(\d+)/);
+                                            if (initialNumberMatch) {
+                                              const initialNumber = initialNumberMatch[1];
+                                              foundFile = allFiles?.find(file => 
+                                                file.name.startsWith(initialNumber)
+                                              );
+                                            }
+                                          }
+                                          
+                                          // Último intento: buscar por similitud de Levenshtein (búsqueda por parte del nombre)
+                                          if (!foundFile) {
+                                            const searchName = originalFileName.replace('.pdf', '').toLowerCase();
+                                            foundFile = allFiles?.find(file => {
+                                              const fileNameLower = file.name.toLowerCase().replace('.pdf', '');
+                                              // Buscar si al menos el 70% del nombre coincide
+                                              const similarity = calculateSimilarity(searchName, fileNameLower);
+                                              return similarity > 0.7 || 
+                                                     fileNameLower.includes(searchName.substring(0, 10)) ||
+                                                     searchName.includes(fileNameLower.substring(0, 10));
+                                            });
+                                          }
+                                          
+                                          // Función auxiliar para calcular similitud simple
+                                          function calculateSimilarity(str1: string, str2: string): number {
+                                            const longer = str1.length > str2.length ? str1 : str2;
+                                            const shorter = str1.length > str2.length ? str2 : str1;
+                                            if (longer.length === 0) return 1.0;
+                                            const distance = levenshteinDistance(longer, shorter);
+                                            return (longer.length - distance) / longer.length;
+                                          }
+                                          
+                                          function levenshteinDistance(str1: string, str2: string): number {
+                                            const matrix: number[][] = [];
+                                            for (let i = 0; i <= str2.length; i++) {
+                                              matrix[i] = [i];
+                                            }
+                                            for (let j = 0; j <= str1.length; j++) {
+                                              matrix[0][j] = j;
+                                            }
+                                            for (let i = 1; i <= str2.length; i++) {
+                                              for (let j = 1; j <= str1.length; j++) {
+                                                if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
+                                                  matrix[i][j] = matrix[i - 1][j - 1];
+                                                } else {
+                                                  matrix[i][j] = Math.min(
+                                                    matrix[i - 1][j - 1] + 1,
+                                                    matrix[i][j - 1] + 1,
+                                                    matrix[i - 1][j] + 1
+                                                  );
+                                                }
+                                              }
+                                            }
+                                            return matrix[str2.length][str1.length];
+                                          }
+                                          
+                                          if (!foundFile) {
+                                            console.error('File not found in bucket:', {
+                                              searched: fileName,
+                                              original: request.ref_pdf,
+                                              availableFiles: allFiles?.map(f => f.name)
+                                            });
+                                            
+                                            const availableFilesList = allFiles?.map(f => f.name).join('\n') || 'Ninguno';
+                                            alert(
+                                              `El archivo PDF no se encontró en el storage.\n\n` +
+                                              `Buscado: ${fileName}\n` +
+                                              `Original: ${request.ref_pdf || 'N/A'}\n\n` +
+                                              `Archivos disponibles en el bucket:\n${availableFilesList}\n\n` +
+                                              `Revisa la consola para más detalles.`
+                                            );
+                                            return;
+                                          }
+                                          
+                                          // Usar el nombre exacto del archivo encontrado
+                                          const actualFileName = foundFile.name;
+                                          console.log('File found! Using:', actualFileName);
+                                          
+                                          // Construir la URL y abrir
+                                          const { data: urlData } = supabase.storage
+                                            .from('prescription')
+                                            .getPublicUrl(actualFileName);
+                                          
+                                          console.log('Opening PDF URL:', urlData.publicUrl);
+                                          window.open(urlData.publicUrl, '_blank');
+                                        }
+                                      }}
+                                  style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '6px',
+                                        padding: '6px 12px',
+                                        backgroundColor: '#e0f2fe',
+                                        color: '#0369a1',
+                                        borderRadius: '6px',
+                                        textDecoration: 'none',
+                                    fontSize: '12px',
+                                    fontWeight: '600',
+                                        transition: 'all 0.2s ease',
+                                      }}
+                                      onMouseEnter={(e) => {
+                                        e.currentTarget.style.backgroundColor = '#bae6fd';
+                                        e.currentTarget.style.transform = 'scale(1.05)';
+                                      }}
+                                      onMouseLeave={(e) => {
+                                        e.currentTarget.style.backgroundColor = '#e0f2fe';
+                                        e.currentTarget.style.transform = 'scale(1)';
+                                      }}
+                                    >
+                                      📄 Ver PDF
+                                    </a>
+                                  ) : (
+                                    <label
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '6px',
+                                        padding: '6px 12px',
+                                        backgroundColor: uploadingPdf === request.request_id ? '#f3f4f6' : '#f0f9ff',
+                                        color: uploadingPdf === request.request_id ? '#6b7280' : '#0284c7',
+                                        borderRadius: '6px',
+                                        cursor: uploadingPdf === request.request_id ? 'not-allowed' : 'pointer',
+                                        fontSize: '12px',
+                                        fontWeight: '600',
+                                        transition: 'all 0.2s ease',
+                                        border: '1px solid #bae6fd',
+                                      }}
+                                      onMouseEnter={(e) => {
+                                        if (uploadingPdf !== request.request_id) {
+                                          e.currentTarget.style.backgroundColor = '#e0f2fe';
+                                          e.currentTarget.style.transform = 'scale(1.05)';
+                                        }
+                                      }}
+                                      onMouseLeave={(e) => {
+                                        if (uploadingPdf !== request.request_id) {
+                                          e.currentTarget.style.backgroundColor = '#f0f9ff';
+                                          e.currentTarget.style.transform = 'scale(1)';
+                                        }
+                                      }}
+                                    >
+                                      {uploadingPdf === request.request_id ? (
+                                        <>
+                                          <span
+                                            style={{
+                                              display: 'inline-block',
+                                              width: '12px',
+                                              height: '12px',
+                                              border: '2px solid #6b7280',
+                                              borderTopColor: 'transparent',
+                                              borderRadius: '50%',
+                                              animation: 'spin 1s linear infinite',
+                                            }}
+                                          ></span>
+                                          Subiendo...
+                                        </>
+                                      ) : (
+                                        <>
+                                          📤 Subir PDF
+                                          <input
+                                            type="file"
+                                            accept=".pdf,application/pdf"
+                                            style={{ display: 'none' }}
+                                            onChange={(e) => {
+                                              const file = e.target.files?.[0];
+                                              if (file) {
+                                                if (file.type !== 'application/pdf') {
+                                                  alert('Por favor, selecciona un archivo PDF');
+                                                  return;
+                                                }
+                                                if (file.size > 10 * 1024 * 1024) {
+                                                  alert('El archivo es demasiado grande. Máximo 10MB');
+                                                  return;
+                                                }
+                                                handlePdfUpload(request.request_id, file);
+                                              }
+                                            }}
+                                            disabled={uploadingPdf === request.request_id}
+                                          />
+                                        </>
+                                      )}
+                                    </label>
+                                  )}
                                 </td>
                                 <td
                                   style={{
@@ -880,8 +1336,8 @@ const Home: React.FC = () => {
                                       fontWeight: '700',
                                       padding: '6px 12px',
                                       borderRadius: '20px',
-                                      backgroundColor: badge.bg,
-                                      color: badge.text,
+                                    backgroundColor: badge.bg,
+                                    color: badge.text,
                                       display: 'inline-block',
                                       textTransform: 'uppercase',
                                       letterSpacing: '0.5px',
@@ -895,10 +1351,10 @@ const Home: React.FC = () => {
                                     }}
                                   >
                                     {displayStatus}
-                                  </span>
-                                </td>
-                              </tr>
-                            );
+                                </span>
+                              </td>
+                            </tr>
+                          );
                           })
                         )}
                       </tbody>
