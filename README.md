@@ -37,10 +37,10 @@ npm install
 
 3. Configure Supabase:
    - Open `src/supabaseClient.ts`
-   - Replace the Supabase URL and anon key with your credentials:
+   - The credential for the Supabase are on supabaseClient.ts file:
    ```typescript
-   const supabaseUrl = 'https://your-project-id.supabase.co'
-   const supabaseKey = 'your-anon-key-here'
+   const supabaseUrl = 'https://project-id.supabase.co'
+   const supabaseKey = 'anon-key'
    ```
 
 ### Running the Application
@@ -52,6 +52,8 @@ npm run dev
 ```
 
 The application will be available at `http://localhost:5173/`
+
+However, the application is now hosted on: 'https://work-well-v2.vercel.app'
 
 ## Technologies
 
