@@ -66,16 +66,30 @@ button:focus-visible {
     background-color: #f9f9f9;
   }
 }
-/* Agrega esto al final de src/index.css */
+/* IBM Chat Widget Styles */
+#ibm-chat-widget {
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+}
 
-#ibm-chat-container {
-  position: absolute;
-  top: -10000px;      /* Lo mandamos fuera de la pantalla */
-  left: -10000px;
-  visibility: hidden; /* Lo hacemos invisible */
-  opacity: 0;         /* Transparencia total */
-  width: 1px;         /* Le damos un tamaño mínimo técnico */
-  height: 1px;
-  overflow: hidden;
-  z-index: -1;
+/* Remove gray frame/border from IBM widget iframe and container */
+#ibm-chat-widget iframe,
+#ibm-chat-widget > div,
+#ibm-chat-widget > div > div {
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+}
+
+/* Ensure button is clickable */
+#ibm-chat-widget * {
+  pointer-events: auto !important;
+}
+
+#ibm-chat-widget iframe {
+  pointer-events: auto !important;
+  border: 0 !important;
 }

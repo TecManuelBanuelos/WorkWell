@@ -208,7 +208,33 @@ const Home: React.FC = () => {
       container.style.height = '600px';
       container.style.zIndex = '1000';
       container.style.visibility = 'visible';
-      container.style.overflow = 'hidden';
+      container.style.overflow = 'visible';
+      container.style.border = 'none';
+      container.style.outline = 'none';
+      container.style.boxShadow = 'none';
+      container.style.background = 'transparent';
+      container.style.pointerEvents = 'auto';
+
+      // Also style any iframes that IBM injects
+      const iframes = container.querySelectorAll('iframe');
+      iframes.forEach((iframe) => {
+        iframe.style.border = 'none';
+        iframe.style.outline = 'none';
+        iframe.style.boxShadow = 'none';
+        iframe.style.pointerEvents = 'auto';
+      });
+
+      // Remove borders from nested divs
+      const nestedDivs = container.querySelectorAll('div');
+      nestedDivs.forEach((div) => {
+        const computedStyle = window.getComputedStyle(div);
+        if (computedStyle.border && computedStyle.border !== 'none' && computedStyle.border !== '0px') {
+          div.style.border = 'none';
+        }
+        if (computedStyle.boxShadow && computedStyle.boxShadow !== 'none') {
+          div.style.boxShadow = 'none';
+        }
+      });
     };
 
     positionWidget();
@@ -216,12 +242,30 @@ const Home: React.FC = () => {
     // Also check periodically in case the widget loads later
     const interval = setInterval(() => {
       const container = document.getElementById('ibm-chat-widget');
-      if (container && container.style.position !== 'fixed') {
+      if (container) {
         positionWidget();
       }
     }, 500);
 
-    return () => clearInterval(interval);
+    // Use MutationObserver to watch for dynamically added elements
+    const observer = new MutationObserver(() => {
+      positionWidget();
+    });
+
+    const container = document.getElementById('ibm-chat-widget');
+    if (container) {
+      observer.observe(container, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['style', 'class'],
+      });
+    }
+
+    return () => {
+      clearInterval(interval);
+      observer.disconnect();
+    };
   }, []);
 
   // --- 3. LÓGICA DE DATOS (TABLA) ---
