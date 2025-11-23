@@ -1,14 +1,7 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 
-// --- CONFIGURACIÓN GLOBAL ---
-declare global {
-  interface Window {
-    wxOConfiguration?: any;
-    wxoLoader?: any;
-  }
-}
 
 // --- ESTILOS ---
 const THEME = {
@@ -42,15 +35,38 @@ interface Employee {
   position: string;
 }
 
+// IBM Watson Orchestrate types
+interface WxOChatOptions {
+  agentId: string;
+  agentEnvironmentId: string;
+}
+
+interface WxOConfiguration {
+  orchestrationID: string;
+  hostURL: string;
+  rootElementID: string;
+  deploymentPlatform: string;
+  crn: string;
+  chatOptions: WxOChatOptions;
+}
+
+interface WxOLoader {
+  init: () => void;
+}
+
+declare global {
+  interface Window {
+    wxOConfiguration?: WxOConfiguration;
+    wxoLoader?: WxOLoader;
+  }
+}
+
 const Home: React.FC = () => {
   const navigate = useNavigate();
   const [loadingSession, setLoadingSession] = useState(true);
 
   // DATOS USUARIO
   const [employee, setEmployee] = useState<Employee | null>(null);
-
-  // ESTADOS AGENTE
-  const isInitialized = useRef(false);
 
   // ESTADOS TABLA
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -98,175 +114,92 @@ const Home: React.FC = () => {
     return () => subscription.unsubscribe();
   }, [navigate]);
 
-  // --- 2. AGENTE IBM (EMBED) ---
+  // --- 2. IBM WATSON ORCHESTRATE AGENT WIDGET ---
   useEffect(() => {
-    if (isInitialized.current) return;
-    isInitialized.current = true;
-
-    const setupInstance = (instance: any) => {
-      console.log('🚀 ¡Agente IBM Listo!', instance);
-
-      if (instance && instance.on) {
-        // Escuchar mensajes para detectar JSON y guardar en Supabase
-        instance.on({
-          type: 'receive',
-          handler: (event: any) => {
-            const botText = event?.data?.text || event?.data?.content || event?.text || event?.content || '';
-
-            // Detectar JSON y guardar en Supabase
-            if (botText) {
-              const jsonMatch = botText.match(/\{[\s\S]*\}/);
-              if (jsonMatch) {
-                try {
-                  const taskData = JSON.parse(jsonMatch[0]);
-                  if (taskData.request_type) {
-                    console.log('💾 Guardando tarea...', taskData);
-                    supabase
-                      .from('tasks')
-                      .insert([taskData])
-                      .then(() => {
-                        console.log('✅ Tarea guardada');
-                        fetchTasks();
-                      });
-                  }
-                } catch (e) {
-                  console.error('Error parsing JSON in bot text', e);
-                }
-              }
-            }
-          },
-        });
-
-        // Token (para evitar 401 si lo pide)
-        instance.on({
-          type: 'authTokenNeeded',
-          handler: (event: any) => {
-            console.log('🔐 Enviando token anónimo...');
-            event.authToken = 'dummy';
-            event.identityToken = 'dummy';
-          },
-        });
-      }
-    };
-
-    // Asegurar que el contenedor existe
-    const ensureContainer = () => {
-      let container = document.getElementById('ibm-chat-widget');
-      if (!container) {
-        container = document.createElement('div');
-        container.id = 'ibm-chat-widget';
-        document.body.appendChild(container);
-      }
-      return container;
-    };
-
-    ensureContainer();
-
-    window.wxOConfiguration = {
-      orchestrationID: '28436f4764ec491e9b6b3797f94e6acc_b4b532d1-d810-4636-9d5e-faf7f5115865',
-      hostURL: 'https://us-south.watson-orchestrate.cloud.ibm.com',
-      rootElementID: 'ibm-chat-widget',
-      deploymentPlatform: 'ibmcloud',
-      crn: 'crn:v1:bluemix:public:watsonx-orchestrate:us-south:a/28436f4764ec491e9b6b3797f94e6acc:b4b532d1-d810-4636-9d5e-faf7f5115865::',
-      chatOptions: {
-        agentId: '3a3b7ae4-2a86-4683-9bbc-61c47a25b98c',
-        agentEnvironmentId: '26e469c0-edc4-465b-a0c6-0749f7153e1b',
-        onLoad: (instance: any) => {
-          console.log('onLoad callback llamado con instancia:', instance);
-          if (instance) {
-            setupInstance(instance);
-          }
-        },
-      },
-    };
-
-    setTimeout(function () {
-      const script = document.createElement('script');
-      script.src = `${window.wxOConfiguration.hostURL}/wxochat/wxoLoader.js?embed=true`;
-      script.addEventListener('load', function () {
-        if (window.wxoLoader) {
-          window.wxoLoader.init();
-        }
-      });
-      document.head.appendChild(script);
-    }, 0);
-  }, []);
-
-  // --- 2.1 POSICIONAR WIDGET EN LA ESQUINA INFERIOR DERECHA ---
-  useEffect(() => {
-    const positionWidget = () => {
-      const container = document.getElementById('ibm-chat-widget');
-      if (!container) {
-        setTimeout(positionWidget, 100);
-        return;
-      }
-
-      container.style.position = 'fixed';
-      container.style.bottom = '24px';
-      container.style.right = '24px';
-      container.style.width = '380px';
-      container.style.height = '600px';
-      container.style.zIndex = '1000';
-      container.style.visibility = 'visible';
-      container.style.overflow = 'visible';
-      container.style.border = 'none';
-      container.style.outline = 'none';
-      container.style.boxShadow = 'none';
-      container.style.background = 'transparent';
-      container.style.pointerEvents = 'auto';
-
-      // Also style any iframes that IBM injects
-      const iframes = container.querySelectorAll('iframe');
-      iframes.forEach((iframe) => {
-        iframe.style.border = 'none';
-        iframe.style.outline = 'none';
-        iframe.style.boxShadow = 'none';
-        iframe.style.pointerEvents = 'auto';
-      });
-
-      // Remove borders from nested divs
-      const nestedDivs = container.querySelectorAll('div');
-      nestedDivs.forEach((div) => {
-        const computedStyle = window.getComputedStyle(div);
-        if (computedStyle.border && computedStyle.border !== 'none' && computedStyle.border !== '0px') {
-          div.style.border = 'none';
-        }
-        if (computedStyle.boxShadow && computedStyle.boxShadow !== 'none') {
-          div.style.boxShadow = 'none';
-        }
-      });
-    };
-
-    positionWidget();
-    
-    // Also check periodically in case the widget loads later
-    const interval = setInterval(() => {
-      const container = document.getElementById('ibm-chat-widget');
-      if (container) {
-        positionWidget();
-      }
-    }, 500);
-
-    // Use MutationObserver to watch for dynamically added elements
-    const observer = new MutationObserver(() => {
-      positionWidget();
-    });
-
-    const container = document.getElementById('ibm-chat-widget');
-    if (container) {
-      observer.observe(container, {
-        childList: true,
-        subtree: true,
-        attributes: true,
-        attributeFilter: ['style', 'class'],
-      });
+    // Wait for session to be loaded before initializing widget
+    if (loadingSession) {
+      return;
     }
 
+    const hostURL = "https://us-south.watson-orchestrate.cloud.ibm.com";
+    
+    // Configure IBM Watson Orchestrate agent
+    // Use a dedicated container to avoid conflicts with React's root element
+    // The widget will create its own floating overlay
+    if (!window.wxOConfiguration) {
+      // Ensure the widget container exists
+      let widgetContainer = document.getElementById('ibm-watson-widget-container');
+      if (!widgetContainer) {
+        widgetContainer = document.createElement('div');
+        widgetContainer.id = 'ibm-watson-widget-container';
+        document.body.appendChild(widgetContainer);
+      }
+
+      window.wxOConfiguration = {
+        orchestrationID: "28436f4764ec491e9b6b3797f94e6acc_b4b532d1-d810-4636-9d5e-faf7f5115865",
+        hostURL: hostURL,
+        rootElementID: "ibm-watson-widget-container",
+        deploymentPlatform: "ibmcloud",
+        crn: "crn:v1:bluemix:public:watsonx-orchestrate:us-south:a/28436f4764ec491e9b6b3797f94e6acc:b4b532d1-d810-4636-9d5e-faf7f5115865::",
+        chatOptions: {
+          agentId: "3a3b7ae4-2a86-4683-9bbc-61c47a25b98c",
+          agentEnvironmentId: "26e469c0-edc4-465b-a0c6-0749f7153e1b",
+        }
+      };
+    }
+
+    // Check if script is already loaded
+    const existingScript = document.querySelector('script[src*="wxoLoader.js"]');
+    if (existingScript) {
+      // If script exists, try to initialize if not already done
+      if (window.wxoLoader && typeof window.wxoLoader.init === 'function') {
+        try {
+          window.wxoLoader.init();
+        } catch (error) {
+          console.error('Error initializing IBM Watson Orchestrate widget:', error);
+        }
+      }
+      return;
+    }
+
+    // Create and load the script
+    const script = document.createElement('script');
+    script.src = `${hostURL}/wxochat/wxoLoader.js?embed=true`;
+    script.async = true;
+    script.id = 'ibm-watson-orchestrate-loader';
+    
+    script.addEventListener('load', () => {
+      // Wait for the loader to be fully available
+      const initInterval = setInterval(() => {
+        if (window.wxoLoader && typeof window.wxoLoader.init === 'function') {
+          clearInterval(initInterval);
+          try {
+            window.wxoLoader.init();
+            console.log('IBM Watson Orchestrate widget initialized successfully');
+          } catch (error) {
+            console.error('Error initializing IBM Watson Orchestrate widget:', error);
+          }
+        }
+      }, 100);
+
+      // Timeout after 5 seconds
+      setTimeout(() => {
+        clearInterval(initInterval);
+      }, 5000);
+    });
+
+    script.addEventListener('error', (error) => {
+      console.error('Error loading IBM Watson Orchestrate script:', error);
+    });
+
+    document.head.appendChild(script);
+
+    // Cleanup function
     return () => {
-      clearInterval(interval);
-      observer.disconnect();
+      // Don't remove the script or configuration on cleanup
+      // The widget should persist across navigation
     };
-  }, []);
+  }, [loadingSession]);
 
   // --- 3. LÓGICA DE DATOS (TABLA) ---
   useEffect(() => {
@@ -682,8 +615,6 @@ const Home: React.FC = () => {
         </div>
       </div>
 
-      {/* Contenedor donde IBM inyecta el widget (lo posicionamos con el useEffect) */}
-      <div id="ibm-chat-widget" />
     </div>
   );
 };

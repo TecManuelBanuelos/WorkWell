@@ -24,10 +24,20 @@ a:hover {
 
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
   min-width: 320px;
   min-height: 100vh;
+}
+
+/* IBM Watson Orchestrate widget container - should not interfere with page layout */
+#ibm-watson-widget-container {
+  position: fixed;
+  z-index: 9999;
+  pointer-events: none;
+}
+
+/* Allow pointer events on the widget itself */
+#ibm-watson-widget-container > * {
+  pointer-events: auto;
 }
 
 h1 {
@@ -65,31 +75,4 @@ button:focus-visible {
   button {
     background-color: #f9f9f9;
   }
-}
-/* IBM Chat Widget Styles */
-#ibm-chat-widget {
-  border: none !important;
-  outline: none !important;
-  box-shadow: none !important;
-  background: transparent !important;
-}
-
-/* Remove gray frame/border from IBM widget iframe and container */
-#ibm-chat-widget iframe,
-#ibm-chat-widget > div,
-#ibm-chat-widget > div > div {
-  border: none !important;
-  outline: none !important;
-  box-shadow: none !important;
-  background: transparent !important;
-}
-
-/* Ensure button is clickable */
-#ibm-chat-widget * {
-  pointer-events: auto !important;
-}
-
-#ibm-chat-widget iframe {
-  pointer-events: auto !important;
-  border: 0 !important;
 }
