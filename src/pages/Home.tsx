@@ -28,6 +28,7 @@ interface LeaveRequest {
   leave_type: string;
   start_date: string;
   end_date: string;
+  days_requested: number;
   approved_days: number;
   created_at?: string; // Optional, might not exist
   status?: string; // Optional, might not exist
@@ -228,6 +229,7 @@ const Home: React.FC = () => {
           leave_type: (item.leave_type as string) || '',
           start_date: (item.start_date as string) || '',
           end_date: (item.end_date as string) || '',
+          days_requested: (item.days_requested as number) || 0,
           approved_days: (item.approved_days as number) || 0,
           created_at: (item.created_at as string) || undefined,
           status: (item.status as string) || undefined,
@@ -696,6 +698,19 @@ const Home: React.FC = () => {
                               letterSpacing: '0.5px',
                             }}
                           >
+                            REQUESTED DAYS
+                          </th>
+                          <th
+                            style={{
+                              padding: '20px 16px',
+                              textAlign: 'center',
+                              fontSize: '11px',
+                              color: '#64748b',
+                              fontWeight: '700',
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.5px',
+                            }}
+                          >
                             APPROVED DAYS
                           </th>
                           <th
@@ -730,7 +745,7 @@ const Home: React.FC = () => {
                         {leaveRequests.length === 0 && !loadingTasks ? (
                           <tr>
                             <td
-                              colSpan={7}
+                              colSpan={8}
                               style={{
                                 padding: '60px 20px',
                                 textAlign: 'center',
@@ -754,22 +769,6 @@ const Home: React.FC = () => {
                                   year: 'numeric',
                                   month: 'short',
                                   day: 'numeric',
-                                });
-                              } catch {
-                                return dateString;
-                              }
-                            };
-
-                            const formatDateTime = (dateString: string) => {
-                              if (!dateString) return '-';
-                              try {
-                                const date = new Date(dateString);
-                                return date.toLocaleDateString('en-US', {
-                                  year: 'numeric',
-                                  month: 'short',
-                                  day: 'numeric',
-                                  hour: '2-digit',
-                                  minute: '2-digit',
                                 });
                               } catch {
                                 return dateString;
@@ -836,6 +835,17 @@ const Home: React.FC = () => {
                                   }}
                                 >
                                   {formatDate(request.end_date)}
+                                </td>
+                                <td
+                                  style={{
+                                    padding: '20px 16px',
+                                    textAlign: 'center',
+                                    fontSize: '14px',
+                                    fontWeight: '600',
+                                    color: THEME.textMain,
+                                  }}
+                                >
+                                  {request.days_requested || 0}
                                 </td>
                                 <td
                                   style={{
