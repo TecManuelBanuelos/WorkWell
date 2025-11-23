@@ -7,6 +7,7 @@ import Login from './pages/Login.tsx';
 import Register from './pages/Register.tsx';
 // Si tu componente principal actual es solo el que tienes, llámalo Home o Dashboard
 import Home from './pages/Home.tsx'; // O el componente principal de tu app
+import ChatBot  from './pages/ChatBot.tsx';
 
 function App() {
   return (
@@ -24,6 +25,8 @@ function App() {
         
         {/* Ruta para el registro */}
         <Route path="/register" element={<Register />} />
+
+        <Route path="/chatbot" element={<ChatBot />} />
         
         {/* Ruta para manejar URLs no encontradas (404) */}
         <Route path="*" element={<h1>404 - Página no encontrada</h1>} />
