@@ -1,34 +1,34 @@
 import { Routes, Route } from 'react-router-dom';
 
-// Importa tus componentes de login y registro
-// Asegúrate de que las rutas de importación sean correctas,
-// por ejemplo, si están en una carpeta 'pages':
+// Importa tus páginas
 import Login from './pages/Login.tsx';
 import Register from './pages/Register.tsx';
-// Si tu componente principal actual es solo el que tienes, llámalo Home o Dashboard
-import Home from './pages/Home.tsx'; // O el componente principal de tu app
+import Home from './pages/Home.tsx';
 import ChatBot  from './pages/ChatBot.tsx';
+
+// Importa el componente de Email
+import EmailForm from './pages/EmailForm.tsx'; 
 
 function App() {
   return (
     <div className="App">
-      {/* Opcional: Si tienes una barra de navegación (Navbar), ponla aquí
-      */}
       
-      {/* Las <Routes> definen dónde se renderizan tus componentes */}
       <Routes>
-        {/* Ruta de inicio (o dashboard, si ya estás logeado) */}
+        {/* Ruta de inicio */}
         <Route path="/" element={<Home />} />
         
-        {/* Ruta para el login */}
+        {/* Auth */}
         <Route path="/login" element={<Login />} />
-        
-        {/* Ruta para el registro */}
         <Route path="/register" element={<Register />} />
 
+        {/* Chat */}
         <Route path="/chatbot" element={<ChatBot />} />
+
+        {/* --- NUEVA RUTA: Formulario de Correo --- */}
+        {/* Para ver esto, deberás ir manualmente a http://localhost:5173/solicitud */}
+        <Route path="/solicitud" element={<EmailForm />} />
         
-        {/* Ruta para manejar URLs no encontradas (404) */}
+        {/* 404 */}
         <Route path="*" element={<h1>404 - Página no encontrada</h1>} />
       </Routes>
     </div>
